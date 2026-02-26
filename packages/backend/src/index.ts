@@ -8,6 +8,7 @@ import { config } from './config/index.js';
 import { ReadFileTool, WriteFileTool, ListDirectoryTool, CreateDirectoryTool, DeleteFileTool, MoveFileTool, CopyFileTool, GlobTool } from './tools/filesystem/index.js';
 import { NavigateTool, ClickTool, FillTool, TypeTool, SelectTool, GetTextTool, GetHtmlTool, ScreenshotTool, SnapshotTool, ScrollTool, WaitForSelectorTool, ClosePageTool } from './tools/browser/index.js';
 import { SkillLoader } from './skills/index.js';
+import { MemoryDB } from './memory/index.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -59,10 +60,14 @@ toolRegistry.register(new WaitForSelectorTool());
 toolRegistry.register(new ClosePageTool());
 
 // Initialize skills
-const skillsDir = './skills';
+const skillsDir = './src/skills/builtin';
 const skillLoader = new SkillLoader(skillsDir);
 await skillLoader.loadAll();
 console.log(`Loaded ${skillLoader.list().length} skills`);
+
+// Initialize memory database
+const memoryDb = new MemoryDB('./pixelmate.db');
+console.log('Memory database initialized');
 
 // Store active agents
 const activeAgents = new Map<string, Agent>();
@@ -196,6 +201,65 @@ app.get('/api/config', (req, res) => {
     maxTurns: config.getMaxTurns(),
     defaultProvider: config.getDefaultProvider()
   });
+});
+
+// Memory/Session API Routes
+
+// Create new session
+app.post('/api/sessions', (req, res) => {
+  const { title } = req.body;
+  const session = memoryDb.createSession(title);
+  res.json({ session });
+});
+
+// List sessions
+app.get('/api/sessions', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 10;
+  const sessions = memoryDb.listSessions(limit);
+  res.json({ sessions });
+});
+
+// Get session
+app.get('/api/sessions/:id', (req, res) => {
+  const session = memoryDb.getSession(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  const messages = memoryDb.getMessages(session.id);
+  res.json({ session, messages });
+});
+
+// Get messages for session
+app.get('/api/sessions/:id/messages', (req, res) => {
+  const messages = memoryDb.getMessages(req.params.id);
+  res.json({ messages });
+});
+
+// Add message to session
+app.post('/api/sessions/:id/messages', (req, res) => {
+  const { role, content } = req.body;
+  const message = memoryDb.addMessage(req.params.id, role, content);
+  res.json({ message });
+});
+
+// Preferences
+app.get('/api/preferences', (req, res) => {
+  const prefs = memoryDb.getAllPreferences();
+  res.json({ preferences: prefs });
+});
+
+app.get('/api/preferences/:key', (req, res) => {
+  const value = memoryDb.getPreference(req.params.key);
+  if (value === undefined) {
+    return res.status(404).json({ error: 'Preference not found' });
+  }
+  res.json({ key: req.params.key, value });
+});
+
+app.post('/api/preferences', (req, res) => {
+  const { key, value } = req.body;
+  memoryDb.setPreference(key, value);
+  res.json({ success: true });
 });
 
 // Create HTTP server
