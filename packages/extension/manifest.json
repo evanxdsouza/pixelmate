@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "PixelMate",
+  "version": "0.1.0",
+  "description": "AI agent that works in your browser and local files",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

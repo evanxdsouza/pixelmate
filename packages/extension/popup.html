@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #111827;
+    }
+    .header {
+      padding: 12px;
+      background: #4f46e5;
+      color: white;
+    }
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .content {
+      padding: 12px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #9ca3af;
+    }
+    .status-dot.connected {
+      background: #10b981;
+    }
+    .input-group {
+      margin-bottom: 12px;
+    }
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #4f46e5;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) {
+      background: #4338ca;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .response {
+      margin-top: 12px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .response.error {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 12px;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px;
+      background: none;
+      border: none;
+      font-size: 13px;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .tab.active {
+      color: #4f46e5;
+      border-bottom: 2px solid #4f46e5;
+    }
+    .hidden {
+      display: none;
+    }
+    .info {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>PixelMate</h1>
+  </div>
+  
+  <div class="content">
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Disconnected</span>
+    </div>
+    
+    <div class="tabs">
+      <button class="tab active" data-tab="task">New Task</button>
+      <button class="tab" data-tab="current">Current Page</button>
+    </div>
+    
+    <div id="taskTab">
+      <div class="input-group">
+        <label>What would you like me to do?</label>
+        <textarea id="prompt" placeholder="Read files, create documents, organize folders..."></textarea>
+      </div>
+      <button id="submitBtn" disabled>Send to PixelMate</button>
+    </div>
+    
+    <div id="currentTab" class="hidden">
+      <div class="input-group">
+        <label>Quick action on this page</label>
+        <input type="text" id="quickAction" placeholder="e.g., Get page title, Click button...">
+      </div>
+      <button id="quickSubmitBtn" disabled>Execute</button>
+    </div>
+    
+    <div class="response hidden" id="response"></div>
+    
+    <p class="info">Make sure PixelMate backend is running on port 3001</p>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
