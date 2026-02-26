@@ -1,26 +1,237 @@
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer } from 'http';
+import { v4 as uuidv4 } from 'uuid';
+import { LLMClient } from './providers/index.js';
+import { Agent, ToolRegistry } from './agents/index.js';
+import { config } from './config/index.js';
+import { ReadFileTool, WriteFileTool, ListDirectoryTool, CreateDirectoryTool, DeleteFileTool, MoveFileTool, CopyFileTool, GlobTool } from './tools/filesystem/index.js';
+import { NavigateTool, ClickTool, FillTool, TypeTool, SelectTool, GetTextTool, GetHtmlTool, ScreenshotTool, SnapshotTool, ScrollTool, WaitForSelectorTool, ClosePageTool } from './tools/browser/index.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 
 app.use(express.json());
 
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`PixelMate backend running on port ${PORT}`);
+// CORS for development
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
+    return res.status(200).json({});
+  }
+  next();
 });
 
-const wss = new WebSocketServer({ server });
+// Initialize tools
+const workingDir = config.getWorkingDir();
+const toolRegistry = new ToolRegistry();
+
+// File system tools
+toolRegistry.register(new ReadFileTool(workingDir));
+toolRegistry.register(new WriteFileTool(workingDir));
+toolRegistry.register(new ListDirectoryTool(workingDir));
+toolRegistry.register(new CreateDirectoryTool(workingDir));
+toolRegistry.register(new DeleteFileTool(workingDir));
+toolRegistry.register(new MoveFileTool(workingDir));
+toolRegistry.register(new CopyFileTool(workingDir));
+toolRegistry.register(new GlobTool(workingDir));
+
+// Browser tools
+toolRegistry.register(new NavigateTool());
+toolRegistry.register(new ClickTool());
+toolRegistry.register(new FillTool());
+toolRegistry.register(new TypeTool());
+toolRegistry.register(new SelectTool());
+toolRegistry.register(new GetTextTool());
+toolRegistry.register(new GetHtmlTool());
+toolRegistry.register(new ScreenshotTool());
+toolRegistry.register(new SnapshotTool());
+toolRegistry.register(new ScrollTool());
+toolRegistry.register(new WaitForSelectorTool());
+toolRegistry.register(new ClosePageTool());
+
+// Store active agents
+const activeAgents = new Map<string, Agent>();
+
+// API Routes
+
+// Start a new agent task
+app.post('/api/agent/start', async (req, res) => {
+  try {
+    const { prompt, model, provider } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    const taskId = uuidv4();
+    const llm = new LLMClient(provider || config.getDefaultProvider());
+    const agent = new Agent(llm, toolRegistry, {
+      model,
+      workingDirectory: workingDir
+    });
+
+    activeAgents.set(taskId, agent);
+
+    // Start agent in background
+    agent.run(prompt)
+      .then(result => {
+        console.log(`Task ${taskId} completed:`, result.slice(0, 100));
+      })
+      .catch(error => {
+        console.error(`Task ${taskId} error:`, error);
+      });
+
+    res.json({ taskId, status: 'started' });
+  } catch (error) {
+    console.error('Error starting agent:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// Get task status
+app.get('/api/agent/status/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const agent = activeAgents.get(taskId);
+  
+  if (!agent) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  res.json({
+    taskId,
+    state: agent.getState(),
+    workingDirectory: agent.getWorkingDirectory()
+  });
+});
+
+// Cancel a task
+app.post('/api/agent/cancel/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const agent = activeAgents.get(taskId);
+  
+  if (!agent) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  agent.cancel();
+  activeAgents.delete(taskId);
+  
+  res.json({ taskId, status: 'cancelled' });
+});
+
+// Get available tools
+app.get('/api/tools', (req, res) => {
+  const tools = toolRegistry.getDefinitions();
+  res.json({ tools });
+});
+
+// File operations
+app.get('/api/files', (req, res) => {
+  const { path } = req.query;
+  const tool = new ListDirectoryTool(workingDir);
+  
+  tool.execute({ path: path || '.' })
+    .then(result => {
+      if (result.success) {
+        res.json({ files: JSON.parse(result.output!) });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+});
+
+app.post('/api/files/read', (req, res) => {
+  const { path } = req.body;
+  const tool = new ReadFileTool(workingDir);
+  
+  tool.execute({ path })
+    .then(result => {
+      if (result.success) {
+        res.json({ content: result.output });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+});
+
+app.post('/api/files/write', (req, res) => {
+  const { path, content } = req.body;
+  const tool = new WriteFileTool(workingDir);
+  
+  tool.execute({ path, content })
+    .then(result => {
+      if (result.success) {
+        res.json({ success: true });
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    });
+});
+
+// Get configuration info
+app.get('/api/config', (req, res) => {
+  res.json({
+    workingDirectory: workingDir,
+    maxTurns: config.getMaxTurns(),
+    defaultProvider: config.getDefaultProvider()
+  });
+});
+
+// Create HTTP server
+const server = createServer(app);
+
+// WebSocket server for real-time updates
+const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws: WebSocket) => {
-  console.log('Client connected');
+  console.log('Client connected via WebSocket');
 
   ws.on('message', (message: string) => {
-    console.log('Received:', message.toString());
+    try {
+      const data = JSON.parse(message.toString());
+      
+      if (data.type === 'start_task') {
+        const { prompt, model, provider } = data;
+        const taskId = uuidv4();
+        
+        const llm = new LLMClient(provider || config.getDefaultProvider());
+        const agent = new Agent(llm, toolRegistry, {
+          model,
+          workingDirectory: workingDir
+        });
+        
+        activeAgents.set(taskId, agent);
+        
+        // Send task started
+        ws.send(JSON.stringify({ type: 'task_started', taskId }));
+        
+        // Forward agent events to client
+        agent.onEvent((event) => {
+          ws.send(JSON.stringify({ type: 'agent_event', taskId, event }));
+        });
+        
+        // Run agent
+        agent.run(prompt)
+          .then(result => {
+            ws.send(JSON.stringify({ type: 'task_completed', taskId, result }));
+            activeAgents.delete(taskId);
+          })
+          .catch(error => {
+            ws.send(JSON.stringify({ type: 'task_error', taskId, error: error.message }));
+            activeAgents.delete(taskId);
+          });
+      }
+    } catch (error) {
+      console.error('WebSocket message error:', error);
+    }
   });
 
   ws.on('close', () => {
@@ -28,4 +239,19 @@ wss.on('connection', (ws: WebSocket) => {
   });
 });
 
-export { app, wss };
+// Start server
+server.listen(PORT, () => {
+  console.log(`
+╔═══════════════════════════════════════════════════════════╗
+║                    PixelMate Server                        ║
+║                                                           ║
+║  HTTP Server:  http://localhost:${PORT}                     ║
+║  WebSocket:    ws://localhost:${PORT}/ws                   ║
+║                                                           ║
+║  Available tools: ${toolRegistry.getAll().length}                                ║
+║  Working dir:  ${workingDir}                 ║
+╚═══════════════════════════════════════════════════════════╝
+  `);
+});
+
+export { app, server, wss };
