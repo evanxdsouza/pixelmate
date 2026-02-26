@@ -7,6 +7,7 @@ import { Agent, ToolRegistry } from './agents/index.js';
 import { config } from './config/index.js';
 import { ReadFileTool, WriteFileTool, ListDirectoryTool, CreateDirectoryTool, DeleteFileTool, MoveFileTool, CopyFileTool, GlobTool } from './tools/filesystem/index.js';
 import { NavigateTool, ClickTool, FillTool, TypeTool, SelectTool, GetTextTool, GetHtmlTool, ScreenshotTool, SnapshotTool, ScrollTool, WaitForSelectorTool, ClosePageTool } from './tools/browser/index.js';
+import { SkillLoader } from './skills/index.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -56,6 +57,12 @@ toolRegistry.register(new SnapshotTool());
 toolRegistry.register(new ScrollTool());
 toolRegistry.register(new WaitForSelectorTool());
 toolRegistry.register(new ClosePageTool());
+
+// Initialize skills
+const skillsDir = './skills';
+const skillLoader = new SkillLoader(skillsDir);
+await skillLoader.loadAll();
+console.log(`Loaded ${skillLoader.list().length} skills`);
 
 // Store active agents
 const activeAgents = new Map<string, Agent>();
@@ -131,6 +138,12 @@ app.post('/api/agent/cancel/:taskId', (req, res) => {
 app.get('/api/tools', (req, res) => {
   const tools = toolRegistry.getDefinitions();
   res.json({ tools });
+});
+
+// Get available skills
+app.get('/api/skills', (req, res) => {
+  const skills = skillLoader.list();
+  res.json({ skills });
 });
 
 // File operations
