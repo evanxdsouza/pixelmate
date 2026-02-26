@@ -1,4 +1,6 @@
-import { LLMProvider, ProviderType, ChatOptions, ChatResponse, StreamingChunk } from './types.js';
+import { LLMProvider, ProviderType, ChatOptions, ChatResponse, StreamingChunk, Message } from './types.js';
+
+export type { Message } from './types.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 
