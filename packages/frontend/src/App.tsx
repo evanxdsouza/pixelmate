@@ -20,12 +20,23 @@ interface TaskEvent {
   error?: string;
 }
 
+interface PendingConfirmation {
+  id: string;
+  toolName: string;
+  dangerLevel: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  taskId: string;
+  timestamp: string;
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<string>('');
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Connect to WebSocket
@@ -64,6 +75,28 @@ function App() {
   }, []);
 
   const handleWsMessage = useCallback((data: TaskEvent) => {
+    // Handle confirmation-related messages
+    if (data.type === 'confirmation_request') {
+      const confData = data as { type: string; confirmation: PendingConfirmation };
+      const conf = confData.confirmation;
+      if (conf) {
+        setConfirmations((prev: PendingConfirmation[]) => [...prev, conf]);
+        setMessages(prev => [...prev, {
+          role: 'system',
+          content: `⚠️ Confirmation required: ${conf.description}`
+        }]);
+      }
+      return;
+    }
+    
+    if (['confirmation_approved', 'confirmation_denied', 'confirmation_expired'].includes(data.type)) {
+      const confData = data as { type: string; id?: string };
+      if (confData.id) {
+        setConfirmations((prev: PendingConfirmation[]) => prev.filter(c => c.id !== confData.id));
+      }
+      return;
+    }
+
     switch (data.type) {
       case 'task_started':
         setStatus('started');
@@ -120,6 +153,25 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Confirmation handlers
+  const handleApproveConfirmation = async (id: string) => {
+    try {
+      await fetch(`/api/confirmations/${id}/approve`, { method: 'POST' });
+      setConfirmations(prev => prev.filter(c => c.id !== id));
+    } catch (error) {
+      console.error('Failed to approve:', error);
+    }
+  };
+
+  const handleDenyConfirmation = async (id: string) => {
+    try {
+      await fetch(`/api/confirmations/${id}/deny`, { method: 'POST' });
+      setConfirmations(prev => prev.filter(c => c.id !== id));
+    } catch (error) {
+      console.error('Failed to deny:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,6 +278,44 @@ function App() {
           </button>
         </form>
       </main>
+
+      {/* Confirmation Modal */}
+      {confirmations.length > 0 && (
+        <div className="confirmation-overlay">
+          {confirmations.map(conf => (
+            <div key={conf.id} className="confirmation-modal">
+              <div className="confirmation-header">
+                <span className={`danger-badge ${conf.dangerLevel}`}>
+                  {conf.dangerLevel.toUpperCase()}
+                </span>
+                <h3>Confirm Action</h3>
+              </div>
+              <div className="confirmation-body">
+                <p><strong>Tool:</strong> {conf.toolName}</p>
+                <p><strong>Description:</strong> {conf.description}</p>
+                <details>
+                  <summary>View Parameters</summary>
+                  <pre>{JSON.stringify(conf.parameters, null, 2)}</pre>
+                </details>
+              </div>
+              <div className="confirmation-actions">
+                <button 
+                  className="deny-btn"
+                  onClick={() => handleDenyConfirmation(conf.id)}
+                >
+                  Deny
+                </button>
+                <button 
+                  className="approve-btn"
+                  onClick={() => handleApproveConfirmation(conf.id)}
+                >
+                  Approve
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { ReadFileTool, WriteFileTool, ListDirectoryTool, CreateDirectoryTool, De
 import { NavigateTool, ClickTool, FillTool, TypeTool, SelectTool, GetTextTool, GetHtmlTool, ScreenshotTool, SnapshotTool, ScrollTool, WaitForSelectorTool, ClosePageTool } from './tools/browser/index.js';
 import { SkillLoader } from './skills/index.js';
 import { MemoryDB } from './memory/index.js';
+import { requiresConfirmation, getDangerLevel, confirmationQueue, getSecurityWarning } from './security/index.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -87,7 +88,18 @@ app.post('/api/agent/start', async (req, res) => {
     const llm = new LLMClient(provider || config.getDefaultProvider());
     const agent = new Agent(llm, toolRegistry, {
       model,
-      workingDirectory: workingDir
+      workingDirectory: workingDir,
+      confirmationHandler: async (toolName: string, params: Record<string, unknown>) => {
+        const dangerLevel = getDangerLevel(toolName);
+        const approved = await confirmationQueue.requestConfirmation({
+          toolName,
+          parameters: params,
+          dangerLevel,
+          description: getSecurityWarning(toolName) || `Execute ${toolName}`,
+          taskId
+        });
+        return approved;
+      }
     });
 
     activeAgents.set(taskId, agent);
@@ -262,6 +274,36 @@ app.post('/api/preferences', (req, res) => {
   res.json({ success: true });
 });
 
+// Confirmation API Routes
+
+// Get pending confirmations
+app.get('/api/confirmations', (req, res) => {
+  const pending = confirmationQueue.getPending();
+  res.json({ confirmations: pending });
+});
+
+// Approve a confirmation
+app.post('/api/confirmations/:id/approve', (req, res) => {
+  const { id } = req.params;
+  const success = confirmationQueue.approve(id);
+  if (success) {
+    res.json({ success: true, message: 'Confirmation approved' });
+  } else {
+    res.status(404).json({ success: false, error: 'Confirmation not found or already processed' });
+  }
+});
+
+// Deny a confirmation
+app.post('/api/confirmations/:id/deny', (req, res) => {
+  const { id } = req.params;
+  const success = confirmationQueue.deny(id);
+  if (success) {
+    res.json({ success: true, message: 'Confirmation denied' });
+  } else {
+    res.status(404).json({ success: false, error: 'Confirmation not found or already processed' });
+  }
+});
+
 // Create HTTP server
 const server = createServer(app);
 
@@ -270,6 +312,9 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connected via WebSocket');
+  
+  // Register client for confirmation notifications
+  confirmationQueue.addClient(ws);
 
   ws.on('message', (message: string) => {
     try {
@@ -282,7 +327,18 @@ wss.on('connection', (ws: WebSocket) => {
         const llm = new LLMClient(provider || config.getDefaultProvider());
         const agent = new Agent(llm, toolRegistry, {
           model,
-          workingDirectory: workingDir
+          workingDirectory: workingDir,
+          confirmationHandler: async (toolName: string, params: Record<string, unknown>) => {
+            const dangerLevel = getDangerLevel(toolName);
+            const approved = await confirmationQueue.requestConfirmation({
+              toolName,
+              parameters: params,
+              dangerLevel,
+              description: getSecurityWarning(toolName) || `Execute ${toolName}`,
+              taskId
+            });
+            return approved;
+          }
         });
         
         activeAgents.set(taskId, agent);
@@ -313,6 +369,7 @@ wss.on('connection', (ws: WebSocket) => {
 
   ws.on('close', () => {
     console.log('Client disconnected');
+    confirmationQueue.removeClient(ws);
   });
 });
 

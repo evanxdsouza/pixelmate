@@ -3,6 +3,11 @@ import { LLMClient, Message } from '../providers/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { Tool, ToolCall, ToolResult } from '../tools/types.js';
 import { config } from '../config/index.js';
+import { requiresConfirmation } from '../security/config.js';
+
+function requiresToolConfirmation(toolName: string): boolean {
+  return requiresConfirmation(toolName);
+}
 
 export type AgentState = 'idle' | 'thinking' | 'acting' | 'done' | 'error';
 
@@ -11,6 +16,7 @@ export interface AgentOptions {
   maxTurns?: number;
   workingDirectory?: string;
   model?: string;
+  confirmationHandler?: (toolName: string, params: Record<string, unknown>) => Promise<boolean>;
 }
 
 export interface AgentEvent {
@@ -36,6 +42,7 @@ export class Agent {
   private currentTurn = 0;
   private eventHandlers: Set<AgentEventHandler> = new Set();
   private taskId: string;
+  private confirmationHandler?: (toolName: string, params: Record<string, unknown>) => Promise<boolean>;
 
   constructor(llm: LLMClient, tools: ToolRegistry, options: AgentOptions = {}) {
     this.llm = llm;
@@ -44,6 +51,7 @@ export class Agent {
     this.maxTurns = options.maxTurns || config.getMaxTurns();
     this.workingDirectory = options.workingDirectory || config.getWorkingDir();
     this.taskId = uuidv4();
+    this.confirmationHandler = options.confirmationHandler;
   }
 
   private getDefaultSystemPrompt(): string {
@@ -139,6 +147,24 @@ Always explain your reasoning and ask for clarification when needed.`;
       for (const toolCall of toolCalls) {
         this.setState('acting');
         this.emit({ type: 'tool_call', toolCall });
+        
+        // Check if confirmation is required
+        if (this.confirmationHandler) {
+          const needsConfirmation = requiresToolConfirmation(toolCall.name);
+          if (needsConfirmation) {
+            this.emit({ type: 'message', message: `⏳ Waiting for confirmation to execute ${toolCall.name}...` });
+            const approved = await this.confirmationHandler(toolCall.name, toolCall.parameters);
+            if (!approved) {
+              const deniedResult = { success: false, error: 'Confirmation denied by user' };
+              this.emit({ type: 'tool_result', toolResult: deniedResult });
+              this.messages.push({ 
+                role: 'user', 
+                content: `Tool ${toolCall.name} was denied by user` 
+              });
+              continue;
+            }
+          }
+        }
         
         const result = await this.tools.execute(toolCall);
         this.emit({ type: 'tool_result', toolResult: result });
