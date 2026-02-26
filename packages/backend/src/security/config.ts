@@ -46,6 +46,42 @@ export const DANGEROUS_TOOLS: SecurityRule[] = [
     dangerLevel: 'medium',
     description: 'Click elements in the page',
     requiresConfirmation: true
+  },
+  {
+    toolName: 'create_spreadsheet',
+    dangerLevel: 'medium',
+    description: 'Create a spreadsheet file',
+    requiresConfirmation: true
+  },
+  {
+    toolName: 'create_document',
+    dangerLevel: 'medium',
+    description: 'Create a Word document',
+    requiresConfirmation: true
+  },
+  {
+    toolName: 'create_presentation',
+    dangerLevel: 'medium',
+    description: 'Create a PowerPoint presentation',
+    requiresConfirmation: true
+  },
+  {
+    toolName: 'create_csv',
+    dangerLevel: 'medium',
+    description: 'Create a CSV file',
+    requiresConfirmation: true
+  },
+  {
+    toolName: 'web_search',
+    dangerLevel: 'low',
+    description: 'Search the web for information',
+    requiresConfirmation: false
+  },
+  {
+    toolName: 'fetch_web_page',
+    dangerLevel: 'low',
+    description: 'Fetch content from a web page',
+    requiresConfirmation: false
   }
 ];
 

@@ -7,6 +7,11 @@ import { Agent, ToolRegistry } from './agents/index.js';
 import { config } from './config/index.js';
 import { ReadFileTool, WriteFileTool, ListDirectoryTool, CreateDirectoryTool, DeleteFileTool, MoveFileTool, CopyFileTool, GlobTool } from './tools/filesystem/index.js';
 import { NavigateTool, ClickTool, FillTool, TypeTool, SelectTool, GetTextTool, GetHtmlTool, ScreenshotTool, SnapshotTool, ScrollTool, WaitForSelectorTool, ClosePageTool } from './tools/browser/index.js';
+import { CreateSpreadsheetTool, ReadSpreadsheetTool, CreateCsvTool, ReadCsvTool } from './tools/spreadsheet/index.js';
+import { CreateDocumentTool, ConvertToDocumentTool } from './tools/document/index.js';
+import { CreatePresentationTool, CreateSlidesFromOutlineTool } from './tools/presentation/index.js';
+import { WebSearchTool, FetchWebPageTool, SummarizeWebSearchTool } from './tools/web/index.js';
+import { FormatAsJsonTool, FormatAsMarkdownTool, ParseJsonTool, ConvertBetweenFormatsTool } from './tools/formatters/index.js';
 import { SkillLoader } from './skills/index.js';
 import { MemoryDB } from './memory/index.js';
 import { requiresConfirmation, getDangerLevel, confirmationQueue, getSecurityWarning } from './security/index.js';
@@ -59,6 +64,31 @@ toolRegistry.register(new SnapshotTool());
 toolRegistry.register(new ScrollTool());
 toolRegistry.register(new WaitForSelectorTool());
 toolRegistry.register(new ClosePageTool());
+
+// Spreadsheet tools
+toolRegistry.register(new CreateSpreadsheetTool(workingDir));
+toolRegistry.register(new ReadSpreadsheetTool(workingDir));
+toolRegistry.register(new CreateCsvTool(workingDir));
+toolRegistry.register(new ReadCsvTool(workingDir));
+
+// Document tools
+toolRegistry.register(new CreateDocumentTool(workingDir));
+toolRegistry.register(new ConvertToDocumentTool(workingDir));
+
+// Presentation tools
+toolRegistry.register(new CreatePresentationTool(workingDir));
+toolRegistry.register(new CreateSlidesFromOutlineTool(workingDir));
+
+// Web tools
+toolRegistry.register(new WebSearchTool());
+toolRegistry.register(new FetchWebPageTool());
+toolRegistry.register(new SummarizeWebSearchTool());
+
+// Formatter tools
+toolRegistry.register(new FormatAsJsonTool(workingDir));
+toolRegistry.register(new FormatAsMarkdownTool(workingDir));
+toolRegistry.register(new ParseJsonTool(workingDir));
+toolRegistry.register(new ConvertBetweenFormatsTool(workingDir));
 
 // Initialize skills
 const skillsDir = './src/skills/builtin';
