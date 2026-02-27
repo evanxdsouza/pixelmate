@@ -13,8 +13,8 @@
     "./security": "./src/security/index.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "@pixelmate/shared": "workspace:*",

@@ -10,8 +10,8 @@
     "./messaging": "./src/messaging/index.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -b",
+    "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
     "zod": "^3.22.4"

@@ -1,4 +1,5 @@
-import Dexie, { Table } from 'dexie';
+import { Dexie } from 'dexie';
+import type { Table } from 'dexie';
 
 export interface Conversation {
   id?: number;
@@ -39,10 +40,10 @@ export interface StoredFile {
 }
 
 export class PixelMateDB extends Dexie {
-  conversations!: Table<Conversation>;
-  messages!: Table<ConversationMessage>;
-  sessions!: Table<Session>;
-  files!: Table<StoredFile>;
+  conversations!: Table<Conversation, number>;
+  messages!: Table<ConversationMessage, number>;
+  sessions!: Table<Session, number>;
+  files!: Table<StoredFile, number>;
 
   constructor() {
     super('PixelMateDB');
@@ -82,8 +83,7 @@ export async function getMessages(conversationId: string): Promise<ConversationM
   return await db.messages
     .where('conversationId')
     .equals(conversationId)
-    .orderBy('timestamp')
-    .toArray();
+    .sortBy('timestamp');
 }
 
 export async function getSession(sessionId: string): Promise<Session | undefined> {

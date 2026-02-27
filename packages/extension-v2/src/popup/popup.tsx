@@ -24,10 +24,19 @@ function PopupApp() {
   }, [messages]);
 
   useEffect(() => {
-    // Load saved API key
+    chrome.storage.sync.get(['selected_provider'], (result) => {
+      const selected = result.selected_provider as string | undefined;
+      if (selected) {
+        setProvider(selected);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    // Load saved API key for selected provider
     chrome.storage.sync.get([`api_key:${provider}`], (result) => {
       const key = result[`api_key:${provider}`] as string;
-      if (key) setApiKey(key);
+      setApiKey(key || '');
     });
   }, [provider]);
 
@@ -78,7 +87,10 @@ function PopupApp() {
   };
 
   const handleSaveApiKey = async () => {
-    await chrome.storage.sync.set({ [`api_key:${provider}`]: apiKey });
+    await chrome.storage.sync.set({
+      [`api_key:${provider}`]: apiKey,
+      selected_provider: provider
+    });
     setShowSettings(false);
   };
 
@@ -104,6 +116,7 @@ function PopupApp() {
             >
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI (GPT)</option>
+              <option value="groq">Groq</option>
             </select>
           </div>
 
@@ -154,6 +167,9 @@ export function PopupUI() {
     setLoading(true);
 
     try {
+      const config = await chrome.storage.sync.get(['selected_provider']);
+      const selectedProvider = (config.selected_provider as string | undefined) || 'anthropic';
+
       const port = chrome.runtime.connect({ name: 'popup' });
       
       port.onMessage.addListener((message) => {
@@ -176,8 +192,7 @@ export function PopupUI() {
       port.postMessage({
         type: 'AGENT_EXECUTE',
         prompt: input,
-        model: 'claude-sonnet-4',
-        provider: 'anthropic'
+        provider: selectedProvider
       });
     } catch (error) {
       setMessages(prev => [...prev, { role: 'system', content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }]);

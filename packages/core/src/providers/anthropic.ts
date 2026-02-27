@@ -7,21 +7,23 @@ export class AnthropicProvider implements LLMProvider {
   name = 'anthropic';
 
   constructor(apiKey: string) {
-    this.client = new Anthropic({
+    const clientOptions: Record<string, unknown> = {
       apiKey,
       dangerouslyAllowBrowser: true
-    });
+    };
+
+    this.client = new Anthropic(clientOptions as any);
   }
 
   async chat(options: ChatOptions): Promise<ChatResponse> {
     const messages = options.messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
+      .filter((m: Message) => m.role !== 'system')
+      .map((m: Message) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content
       }));
 
-    const systemMessage = options.messages.find(m => m.role === 'system')?.content || '';
+    const systemMessage = options.messages.find((m: Message) => m.role === 'system')?.content || '';
 
     const response = await this.client.messages.create({
       model: options.model || 'claude-sonnet-4',
@@ -48,13 +50,13 @@ export class AnthropicProvider implements LLMProvider {
 
   async *chatStream(options: ChatOptions): AsyncGenerator<StreamingChunk> {
     const messages = options.messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
+      .filter((m: Message) => m.role !== 'system')
+      .map((m: Message) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content
       }));
 
-    const systemMessage = options.messages.find(m => m.role === 'system')?.content || '';
+    const systemMessage = options.messages.find((m: Message) => m.role === 'system')?.content || '';
 
     const stream = this.client.messages.stream({
       model: options.model || 'claude-sonnet-4',

@@ -1,4 +1,5 @@
-import { Tool, ToolRegistry } from './registry.js';
+import { ToolRegistry } from './registry.js';
+import type { Tool } from '@pixelmate/shared';
 
 export { ToolRegistry };
 export type { Tool };

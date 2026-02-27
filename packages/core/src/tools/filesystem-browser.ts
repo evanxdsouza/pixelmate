@@ -75,8 +75,13 @@ export class OPFSFileSystem {
     const dirHandle = await this.getDirHandle(directory);
     const files: string[] = [];
 
-    for await (const entry of dirHandle.values()) {
-      files.push(entry.name);
+    const iterator = (dirHandle as any).values
+      ? (dirHandle as any).values()
+      : (dirHandle as any).entries();
+
+    for await (const entry of iterator) {
+      const handle = (entry as any).kind ? entry : (entry as any)[1];
+      files.push(handle.name);
     }
 
     return files;
@@ -207,8 +212,13 @@ export class ChromeFileSystemAccessor {
     const dirHandle = await this.getDirHandle(directory);
     const files: string[] = [];
 
-    for await (const entry of dirHandle.values()) {
-      files.push(entry.name);
+    const iterator = (dirHandle as any).values
+      ? (dirHandle as any).values()
+      : (dirHandle as any).entries();
+
+    for await (const entry of iterator) {
+      const handle = (entry as any).kind ? entry : (entry as any)[1];
+      files.push(handle.name);
     }
 
     return files;

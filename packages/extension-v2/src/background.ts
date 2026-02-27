@@ -3,8 +3,9 @@
  * Runs the core agent logic using Chrome APIs
  */
 
-import { Agent, ToolRegistry, AnthropicProvider, OpenAIProvider } from '@pixelmate/core';
+import { Agent, ToolRegistry, AnthropicProvider, OpenAIProvider, GroqProvider } from '@pixelmate/core';
 import {
+  // Filesystem
   ReadFileTool,
   WriteFileTool,
   ListDirectoryTool,
@@ -12,7 +13,38 @@ import {
   DeleteFileTool,
   MoveFileTool,
   CopyFileTool,
-  HybridFileSystem
+  HybridFileSystem,
+  // Browser automation
+  BrowserNavigateTool,
+  BrowserClickTool,
+  BrowserFillTool,
+  BrowserTypeTool,
+  BrowserSelectTool,
+  BrowserGetTextTool,
+  BrowserGetHTMLTool,
+  BrowserScreenshotTool,
+  BrowserScrollTool,
+  BrowserWaitTool,
+  // Documents
+  CreateDocumentTool,
+  ConvertToDocumentTool,
+  // Spreadsheets
+  CreateSpreadsheetTool,
+  ReadSpreadsheetTool,
+  CreateCSVTool,
+  ReadCSVTool,
+  // Presentations
+  CreatePresentationTool,
+  CreateSlidesFromOutlineTool,
+  // Formatters
+  FormatAsJSONTool,
+  FormatAsMarkdownTool,
+  ParseJSONTool,
+  ConvertBetweenFormatsTool,
+  // Web search
+  WebSearchTool,
+  FetchWebPageTool,
+  ResearchTopicTool
 } from '@pixelmate/core';
 import { getApiKey, getChromeStorage } from '@pixelmate/core';
 import { LLMProvider } from '@pixelmate/shared';
@@ -43,8 +75,44 @@ async function initializeToolRegistry(): Promise<void> {
   toolRegistry.register(new MoveFileTool(fs));
   toolRegistry.register(new CopyFileTool(fs));
   
-  // Browser tools are implemented via content script communication
-  // We'll add those tool definitions but route them through content script messaging
+  // Register browser automation tools
+  toolRegistry.register(new BrowserNavigateTool());
+  toolRegistry.register(new BrowserClickTool());
+  toolRegistry.register(new BrowserFillTool());
+  toolRegistry.register(new BrowserTypeTool());
+  toolRegistry.register(new BrowserSelectTool());
+  toolRegistry.register(new BrowserGetTextTool());
+  toolRegistry.register(new BrowserGetHTMLTool());
+  toolRegistry.register(new BrowserScreenshotTool());
+  toolRegistry.register(new BrowserScrollTool());
+  toolRegistry.register(new BrowserWaitTool());
+  
+  // Register document tools
+  toolRegistry.register(new CreateDocumentTool(fs));
+  toolRegistry.register(new ConvertToDocumentTool(fs));
+  
+  // Register spreadsheet tools
+  toolRegistry.register(new CreateSpreadsheetTool(fs));
+  toolRegistry.register(new ReadSpreadsheetTool(fs));
+  toolRegistry.register(new CreateCSVTool(fs));
+  toolRegistry.register(new ReadCSVTool(fs));
+  
+  // Register presentation tools
+  toolRegistry.register(new CreatePresentationTool(fs));
+  toolRegistry.register(new CreateSlidesFromOutlineTool(fs));
+  
+  // Register formatter tools
+  toolRegistry.register(new FormatAsJSONTool());
+  toolRegistry.register(new FormatAsMarkdownTool());
+  toolRegistry.register(new ParseJSONTool());
+  toolRegistry.register(new ConvertBetweenFormatsTool());
+  
+  // Register web search tools
+  toolRegistry.register(new WebSearchTool());
+  toolRegistry.register(new FetchWebPageTool());
+  toolRegistry.register(new ResearchTopicTool());
+  
+  console.log(`Initialized ${toolRegistry.getAll().length} tools in registry`);
 }
 
 // Get LLM provider based on config
@@ -61,6 +129,8 @@ async function getProvider(providerName?: string): Promise<LLMProvider> {
       return new AnthropicProvider(apiKey);
     case 'openai':
       return new OpenAIProvider(apiKey);
+    case 'groq':
+      return new GroqProvider(apiKey);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }

@@ -67,6 +67,10 @@ export class HybridFileSystem {
         return await this.chromeAccess.writeFile(path, content);
       case 'google-drive':
         if (!this.googleDrive) throw new Error('Google Drive not initialized');
+        if (content instanceof ArrayBuffer) {
+          await this.googleDrive.writeFile(path, new Blob([content]));
+          return;
+        }
         await this.googleDrive.writeFile(path, content);
         return;
       default:
@@ -151,7 +155,8 @@ export class HybridFileSystem {
         return await this.chromeAccess.copyFile(from, to);
       case 'google-drive':
         if (!this.googleDrive) throw new Error('Google Drive not initialized');
-        return await this.googleDrive.copyFile(from, to);
+        await this.googleDrive.copyFile(from, to);
+        return;
       default:
         throw new Error(`Unknown filesystem mode: ${targetMode}`);
     }
