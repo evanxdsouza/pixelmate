@@ -1,52 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { bridge, AgentEvent, FileMeta, Session, ToolMeta } from './services/ExtensionBridge';
 
 interface Message {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
   toolName?: string;
-}
-
-interface TaskEvent {
-  type: string;
-  taskId?: string;
-  event?: {
-    type: string;
-    thought?: string;
-    toolCall?: { name: string; id: string; parameters?: Record<string, unknown> };
-    toolResult?: { success: boolean; output?: string; error?: string };
-    message?: string;
-    state?: string;
-  };
-  result?: string;
-  error?: string;
 }
 
 interface PendingConfirmation {
   id: string;
   toolName: string;
-  dangerLevel: string;
   description: string;
   parameters: Record<string, unknown>;
-  taskId: string;
-  timestamp: string;
-}
-
-interface Session {
-  id: string;
-  title: string;
-  createdAt: string;
-}
-
-interface FileItem {
-  name: string;
-  type: 'file' | 'directory';
-  size?: number;
-  modified?: string;
-}
-
-interface Tool {
-  name: string;
-  description: string;
+  dangerLevel: 'low' | 'medium' | 'high';
 }
 
 type View = 'chat' | 'files' | 'tools' | 'settings';
@@ -55,203 +21,163 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState<string>('');
-  const [ws, setWs] = useState<WebSocket | null>(null);
-  const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [status, setStatus] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSession, setCurrentSession] = useState<string | null>(null);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
+  const [tools, setTools] = useState<ToolMeta[]>([]);
+  const [files, setFiles] = useState<FileMeta[]>([]);
   const [currentView, setCurrentView] = useState<View>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isTyping, setIsTyping] = useState(false);
+  const [confirmations, setConfirmations] = useState<PendingConfirmation[]>([]);
+  const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [provider, setProvider] = useState('anthropic');
+  const [settingsApiKey, setSettingsApiKey] = useState('');
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  const [saveKeyStatus, setSaveKeyStatus] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    const websocket = new WebSocket(wsUrl);
-    
-    websocket.onopen = () => {
-      console.log('WebSocket connected');
+    const available = bridge.isAvailable();
+    setExtensionAvailable(available);
+
+    if (available) {
       fetchSessions();
       fetchTools();
-      fetchFiles();
-    };
-    
-    websocket.onmessage = (event) => {
-      try {
-        const data: TaskEvent = JSON.parse(event.data);
-        handleWsMessage(data);
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
-    
-    websocket.onclose = () => {
-      console.log('WebSocket disconnected');
-    };
-    
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-    
-    setWs(websocket);
-    
-    return () => {
-      websocket.close();
-    };
+      bridge.getConfig(['selected_provider']).then((cfg) => {
+        if (cfg.selected_provider) setProvider(String(cfg.selected_provider));
+      }).catch(() => {});
+    }
   }, []);
 
   const fetchSessions = async () => {
-    try {
-      const res = await fetch('/api/sessions?limit=10');
-      const data = await res.json();
-      setSessions(data.sessions || []);
-    } catch (e) {}
+    try { setSessions(await bridge.getSessions()); } catch (_) {}
   };
 
   const fetchTools = async () => {
-    try {
-      const res = await fetch('/api/tools');
-      const data = await res.json();
-      setTools(data.tools || []);
-    } catch (e) {}
+    try { setTools(await bridge.getTools()); } catch (_) {}
   };
 
   const fetchFiles = async () => {
-    try {
-      const res = await fetch('/api/files');
-      const data = await res.json();
-      setFiles(data.files || []);
-    } catch (e) {}
+    try { setFiles(await bridge.getFiles()); } catch (_) {}
   };
-
-  const handleWsMessage = useCallback((data: TaskEvent) => {
-    if (data.type === 'confirmation_request') {
-      const confData = data as { type: string; confirmation: PendingConfirmation };
-      const conf = confData.confirmation;
-      if (conf) {
-        setConfirmations(prev => [...prev, conf]);
-      }
-      return;
-    }
-    
-    if (['confirmation_approved', 'confirmation_denied', 'confirmation_expired'].includes(data.type)) {
-      const confData = data as { type: string; id?: string };
-      if (confData.id) {
-        setConfirmations(prev => prev.filter(c => c.id !== confData.id));
-      }
-      return;
-    }
-
-    switch (data.type) {
-      case 'task_started':
-        setStatus('started');
-        setIsTyping(true);
-        break;
-      case 'agent_event':
-        if (data.event) {
-          if (data.event.type === 'thought' && data.event.thought) {
-            setMessages(prev => [...prev, { 
-              role: 'assistant', 
-              content: data.event?.thought || '' 
-            }]);
-          } else if (data.event.type === 'tool_call' && data.event.toolCall) {
-            setMessages(prev => [...prev, { 
-              role: 'tool', 
-              content: `Executing: ${data.event.toolCall.name}`,
-              toolName: data.event.toolCall.name
-            }]);
-          } else if (data.event.type === 'tool_result' && data.event.toolResult) {
-            const result = data.event.toolResult;
-            const lastMsg = messages[messages.length - 1];
-            if (lastMsg?.role === 'tool') {
-              setMessages(prev => prev.slice(0, -1));
-            }
-            setMessages(prev => [...prev, { 
-              role: 'system', 
-              content: result.success 
-                ? (result.output || 'Done') 
-                : `Error: ${result.error}` 
-            }]);
-          } else if (data.event.type === 'state_change') {
-            setStatus(data.event.state || '');
-            if (data.event.state === 'done' || data.event.state === 'error') {
-              setIsTyping(false);
-            }
-          }
-        }
-        break;
-      case 'task_completed':
-        setIsLoading(false);
-        setIsTyping(false);
-        setStatus('completed');
-        break;
-      case 'task_error':
-        setIsLoading(false);
-        setIsTyping(false);
-        setStatus('error');
-        if (data.error) {
-          setMessages(prev => [...prev, { 
-            role: 'system', 
-            content: `Error: ${data.error}` 
-          }]);
-        }
-        break;
-    }
-  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleApproveConfirmation = async (id: string) => {
-    try {
-      await fetch(`/api/confirmations/${id}/approve`, { method: 'POST' });
-      setConfirmations(prev => prev.filter(c => c.id !== id));
-    } catch (error) {
-      console.error('Failed to approve:', error);
+  const handleAgentEvent = useCallback((event: AgentEvent) => {
+    if (event.type === 'thought' && event.thought) {
+      setMessages(prev => [...prev, { role: 'assistant', content: event.thought! }]);
+    } else if (event.type === 'tool_call' && event.toolCall) {
+      setMessages(prev => [...prev, {
+        role: 'tool',
+        content: `Executing: ${event.toolCall!.name}`,
+        toolName: event.toolCall!.name,
+      }]);
+    } else if (event.type === 'tool_result' && event.toolResult) {
+      const result = event.toolResult;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        const base = last?.role === 'tool' ? prev.slice(0, -1) : prev;
+        return [...base, {
+          role: 'system',
+          content: result.success ? (result.output || 'Done') : `Error: ${result.error}`,
+        }];
+      });
+    } else if (event.type === 'state_change') {
+      setStatus(event.state || '');
+      if (event.state === 'done' || event.state === 'error') setIsTyping(false);
+    } else if (event.type === 'error' && event.error) {
+      setMessages(prev => [...prev, { role: 'system', content: `Error: ${event.error}` }]);
+      setIsTyping(false);
+      setIsLoading(false);
     }
-  };
-
-  const handleDenyConfirmation = async (id: string) => {
-    try {
-      await fetch(`/api/confirmations/${id}/deny`, { method: 'POST' });
-      setConfirmations(prev => prev.filter(c => c.id !== id));
-    } catch (error) {
-      console.error('Failed to deny:', error);
-    }
-  };
+  }, []);
 
   const handleNewChat = () => {
+    cancelRef.current?.();
     setMessages([]);
     setCurrentSession(null);
     setStatus('');
+    setIsLoading(false);
+    setIsTyping(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = { role: 'user' as const, content: input };
-    setMessages(prev => [...prev, userMessage]);
+    if (!extensionAvailable) {
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: 'PixelMate extension is not detected. Please install it and reload this page.',
+      }]);
+      return;
+    }
+
+    const userMsg: Message = { role: 'user', content: input.trim() };
+    setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
+    setIsTyping(true);
     setStatus('starting');
 
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'start_task',
-        prompt: input
-      }));
+    const sessionId = currentSession ?? `session-${Date.now()}`;
+    if (!currentSession) {
+      setCurrentSession(sessionId);
+      const s: Session = { id: sessionId, title: userMsg.content.slice(0, 60), createdAt: new Date().toISOString() };
+      setSessions(prev => [s, ...prev]);
+      bridge.saveSession(s).catch(() => {});
+    }
+
+    cancelRef.current = bridge.executeAgent(
+      userMsg.content,
+      { provider },
+      handleAgentEvent,
+      (result) => {
+        setMessages(prev => [...prev, { role: 'assistant', content: result }]);
+        setIsLoading(false);
+        setIsTyping(false);
+        setStatus('done');
+      },
+      (error) => {
+        setMessages(prev => [...prev, { role: 'system', content: `Error: ${error}` }]);
+        setIsLoading(false);
+        setIsTyping(false);
+        setStatus('error');
+      }
+    );
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!settingsApiKey.trim()) return;
+    setIsSavingKey(true);
+    try {
+      await bridge.setApiKey(provider, settingsApiKey.trim());
+      setSaveKeyStatus('Saved!');
+      setSettingsApiKey('');
+    } catch {
+      setSaveKeyStatus('Failed to save key');
+    } finally {
+      setIsSavingKey(false);
+      setTimeout(() => setSaveKeyStatus(''), 3000);
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const handleGoogleSignIn = async () => {
+    try { await bridge.googleSignIn(); setGoogleConnected(true); } catch (err) { console.error(err); }
+  };
+
+  const handleGoogleSignOut = async () => {
+    try { await bridge.googleSignOut(); setGoogleConnected(false); } catch (_) {}
+  };
+
+  const handleRequestFileAccess = async () => {
+    try { await bridge.requestFileAccess(); } catch (err) { console.error(err); }
   };
 
   const getStatusColor = () => {
@@ -266,7 +192,6 @@ function App() {
 
   return (
     <div className="app">
-      {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header">
           <div className="logo">
@@ -322,8 +247,8 @@ function App() {
           <h3>Recent Sessions</h3>
           <div className="sessions-list">
             {sessions.map(session => (
-              <button 
-                key={session.id} 
+              <button
+                key={session.id}
                 className={`session-item ${currentSession === session.id ? 'active' : ''}`}
                 onClick={() => setCurrentSession(session.id)}
               >
@@ -333,23 +258,24 @@ function App() {
                 <span>{session.title || 'New Chat'}</span>
               </button>
             ))}
-            {sessions.length === 0 && (
-              <p className="no-sessions">No sessions yet</p>
-            )}
+            {sessions.length === 0 && <p className="no-sessions">No sessions yet</p>}
           </div>
         </div>
 
         <div className="sidebar-footer">
-          <div className={`connection-status ${ws?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected'}`}>
+          <div className={`connection-status ${extensionAvailable ? 'connected' : 'disconnected'}`}>
             <span className="status-dot"></span>
-            {ws?.readyState === WebSocket.OPEN ? 'Connected' : 'Disconnected'}
+            {extensionAvailable ? 'Extension active' : 'Extension not found'}
           </div>
+          {googleConnected && (
+            <div className="connection-status connected" style={{ marginTop: 4 }}>
+              <span className="status-dot"></span>Google Drive
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="main">
-        {/* Header */}
         <header className="main-header">
           <div className="header-left">
             {!sidebarOpen && (
@@ -370,18 +296,27 @@ function App() {
             {isLoading && (
               <div className="processing-indicator">
                 <div className="spinner"></div>
-                <span>{status || 'Processing...'}</span>
+                <span style={{ color: getStatusColor() }}>{status || 'Processing...'}</span>
               </div>
             )}
           </div>
         </header>
 
-        {/* Content Area */}
         <div className="content">
           {currentView === 'chat' && (
             <>
+              {!extensionAvailable && (
+                <div className="extension-banner">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  PixelMate extension not detected. Install it and reload to enable full functionality.
+                </div>
+              )}
               <div className="messages-container">
-                {messages.length === 0 ? (
+                {messages.length === 0 && (
                   <div className="welcome-screen">
                     <div className="welcome-icon">
                       <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
@@ -449,9 +384,7 @@ function App() {
                       </svg>
                     </div>
                     <div className="message-content">
-                      <div className="typing-indicator">
-                        <span></span><span></span><span></span>
-                      </div>
+                      <div className="typing-indicator"><span></span><span></span><span></span></div>
                     </div>
                   </div>
                 )}
@@ -467,10 +400,7 @@ function App() {
                     disabled={isLoading}
                     rows={1}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSubmit(e);
-                      }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
                     }}
                   />
                   <button type="submit" disabled={isLoading || !input.trim()}>
@@ -488,13 +418,21 @@ function App() {
             <div className="files-view">
               <div className="files-header">
                 <h2>Workspace Files</h2>
-                <button className="refresh-btn" onClick={fetchFiles}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M23 4v6h-6M1 20v-6h6"/>
-                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-                  </svg>
-                  Refresh
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="refresh-btn" onClick={handleRequestFileAccess}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                    </svg>
+                    Grant Access
+                  </button>
+                  <button className="refresh-btn" onClick={fetchFiles}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M23 4v6h-6M1 20v-6h6"/>
+                      <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
               </div>
               <div className="files-grid">
                 {files.map((file, i) => (
@@ -531,7 +469,7 @@ function App() {
 
           {currentView === 'tools' && (
             <div className="tools-view">
-              <h2>Available Tools</h2>
+              <h2>Available Tools ({tools.length})</h2>
               <div className="tools-grid">
                 {tools.map((tool, i) => (
                   <div key={i} className="tool-card">
@@ -539,6 +477,12 @@ function App() {
                     <p className="tool-desc">{tool.description}</p>
                   </div>
                 ))}
+                {tools.length === 0 && (
+                  <div className="empty-state">
+                    <p>No tools loaded</p>
+                    <p className="hint">Make sure the extension is active</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -546,28 +490,70 @@ function App() {
           {currentView === 'settings' && (
             <div className="settings-view">
               <h2>Settings</h2>
+
               <div className="settings-section">
-                <h3>Connection</h3>
+                <h3>AI Provider</h3>
                 <div className="setting-item">
-                  <span>WebSocket Status</span>
-                  <span className={`status-badge ${ws?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected'}`}>
-                    {ws?.readyState === WebSocket.OPEN ? 'Connected' : 'Disconnected'}
-                  </span>
+                  <label htmlFor="provider-select">Provider</label>
+                  <select id="provider-select" value={provider} onChange={(e) => setProvider(e.target.value)}>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="groq">Groq (Llama / Mixtral)</option>
+                  </select>
                 </div>
-                <div className="setting-item">
-                  <span>Backend URL</span>
-                  <code>http://localhost:3001</code>
+                <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                  <label>API Key for {provider}</label>
+                  <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                    <input
+                      type="password"
+                      placeholder={`Enter ${provider} API key…`}
+                      value={settingsApiKey}
+                      onChange={(e) => setSettingsApiKey(e.target.value)}
+                      style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text)' }}
+                    />
+                    <button onClick={handleSaveApiKey} disabled={isSavingKey || !settingsApiKey.trim()} className="approve-btn">
+                      {isSavingKey ? 'Saving…' : 'Save Key'}
+                    </button>
+                  </div>
+                  {saveKeyStatus && <span style={{ fontSize: 12, color: 'var(--success)' }}>{saveKeyStatus}</span>}
                 </div>
               </div>
+
+              <div className="settings-section">
+                <h3>Google Workspace</h3>
+                <div className="setting-item">
+                  <span>Google Drive &amp; Docs</span>
+                  {googleConnected
+                    ? <button className="deny-btn" onClick={handleGoogleSignOut}>Sign Out</button>
+                    : <button className="approve-btn" onClick={handleGoogleSignIn}>Connect Google</button>
+                  }
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <h3>Local Files</h3>
+                <div className="setting-item">
+                  <span>Native filesystem access</span>
+                  <button className="approve-btn" onClick={handleRequestFileAccess}>Grant Access</button>
+                </div>
+              </div>
+
+              <div className="settings-section">
+                <h3>Extension</h3>
+                <div className="setting-item">
+                  <span>Status</span>
+                  <span className={`status-badge ${extensionAvailable ? 'connected' : 'disconnected'}`}>
+                    {extensionAvailable ? 'Active' : 'Not found'}
+                  </span>
+                </div>
+              </div>
+
               <div className="settings-section">
                 <h3>About</h3>
-                <div className="setting-item">
-                  <span>Version</span>
-                  <span>0.1.0</span>
-                </div>
+                <div className="setting-item"><span>Version</span><span>0.1.0</span></div>
                 <div className="setting-item">
                   <span>Documentation</span>
-                  <a href="/docs" target="_blank">View Docs</a>
+                  <a href="/docs" target="_blank" rel="noreferrer">View Docs</a>
                 </div>
               </div>
             </div>
@@ -575,7 +561,6 @@ function App() {
         </div>
       </main>
 
-      {/* Confirmation Modal */}
       {confirmations.length > 0 && (
         <div className="modal-overlay">
           {confirmations.map(conf => (
@@ -594,26 +579,16 @@ function App() {
                 </div>
               </div>
               <div className="modal-body">
-                <div className="info-row">
-                  <label>Tool</label>
-                  <code>{conf.toolName}</code>
-                </div>
-                <div className="info-row">
-                  <label>Description</label>
-                  <p>{conf.description}</p>
-                </div>
+                <div className="info-row"><label>Tool</label><code>{conf.toolName}</code></div>
+                <div className="info-row"><label>Description</label><p>{conf.description}</p></div>
                 <details className="params-details">
                   <summary>View Parameters</summary>
                   <pre>{JSON.stringify(conf.parameters, null, 2)}</pre>
                 </details>
               </div>
               <div className="modal-actions">
-                <button className="deny-btn" onClick={() => handleDenyConfirmation(conf.id)}>
-                  Deny
-                </button>
-                <button className="approve-btn" onClick={() => handleApproveConfirmation(conf.id)}>
-                  Approve
-                </button>
+                <button className="deny-btn" onClick={() => setConfirmations(prev => prev.filter(c => c.id !== conf.id))}>Deny</button>
+                <button className="approve-btn" onClick={() => setConfirmations(prev => prev.filter(c => c.id !== conf.id))}>Approve</button>
               </div>
             </div>
           ))}

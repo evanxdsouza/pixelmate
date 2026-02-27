@@ -7,16 +7,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:backend": "npm run dev --workspace=packages/backend",
-    "dev:frontend": "npm run dev --workspace=packages/frontend",
-    "build": "npm run build --workspaces",
-    "build:backend": "npm run build --workspace=packages/backend",
-    "build:frontend": "npm run build --workspace=packages/frontend",
-    "lint": "npm run lint --workspaces",
-    "format": "npm run format --workspaces",
-    "test": "npm run test --workspaces",
-    "test:backend": "npm run test --workspace=packages/backend",
-    "test:frontend": "npm run test --workspace=packages/frontend"
+    "build": "pnpm -r run build",
+    "build:shared": "pnpm --filter @pixelmate/shared run build",
+    "build:core": "pnpm --filter @pixelmate/core run build",
+    "build:extension": "pnpm --filter @pixelmate/extension run build",
+    "build:frontend": "pnpm --filter @pixelmate/frontend run build",
+    "build:all": "pnpm --filter @pixelmate/shared run build && pnpm --filter @pixelmate/core run build && pnpm --filter @pixelmate/extension-v2 run build && pnpm --filter @pixelmate/frontend run build",
+    "dev:extension": "pnpm --filter @pixelmate/extension-v2 run dev",
+    "dev:frontend": "pnpm --filter @pixelmate/frontend run dev",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

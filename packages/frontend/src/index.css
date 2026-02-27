@@ -950,3 +950,16 @@ body {
     justify-content: center;
   }
 }
+
+/* Extension not-installed banner */
+.extension-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border-bottom: 1px solid var(--warning);
+  font-size: 13px;
+  color: var(--text);
+}
+

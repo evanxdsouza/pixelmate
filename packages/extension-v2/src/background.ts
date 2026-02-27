@@ -3,7 +3,7 @@
  * Runs the core agent logic using Chrome APIs
  */
 
-import { Agent, ToolRegistry, AnthropicProvider, OpenAIProvider, GroqProvider } from '@pixelmate/core';
+import { Agent, ToolRegistry, AnthropicProvider, OpenAIProvider, GroqProvider, getSkillPrompt } from '@pixelmate/core';
 import {
   // Filesystem
   ReadFileTool,
@@ -159,8 +159,8 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
   try {
     switch (message.type) {
       case 'AGENT_EXECUTE': {
-        const { prompt, model, provider } = message;
-        const result = await executeAgent(prompt, model, provider);
+        const { prompt, model, provider, skill } = message;
+        const result = await executeAgent(prompt, model, provider, skill);
         sendResponse({ success: true, result });
         break;
       }
@@ -197,6 +197,90 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
         sendResponse({ success: true, tools });
         break;
       }
+
+      case 'GOOGLE_AUTH': {
+        // Request Google OAuth token using chrome.identity
+        // Scopes cover Drive, Sheets, Docs, Slides, Gmail read
+        const GOOGLE_SCOPES = [
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/documents',
+          'https://www.googleapis.com/auth/presentations',
+          'https://www.googleapis.com/auth/gmail.readonly'
+        ];
+
+        try {
+          // Try the Chrome extension identity flow first (works on Chromebook)
+          const token = await new Promise<string>((resolve, reject) => {
+            chrome.identity.getAuthToken({ interactive: true, scopes: GOOGLE_SCOPES }, (token) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else if (token) {
+                resolve(token);
+              } else {
+                reject(new Error('No token returned'));
+              }
+            });
+          });
+
+          // Wire Google Drive into the filesystem
+          await fileSystem.initializeGoogleDrive(token);
+          await chrome.storage.session.set({ google_access_token: token });
+
+          sendResponse({ success: true, token });
+        } catch (err) {
+          sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+      }
+
+      case 'GOOGLE_SIGNOUT': {
+        // Revoke and remove cached token
+        const cached = await chrome.storage.session.get('google_access_token');
+        if (cached.google_access_token) {
+          chrome.identity.removeCachedAuthToken({ token: cached.google_access_token });
+          await chrome.storage.session.remove('google_access_token');
+        }
+        sendResponse({ success: true });
+        break;
+      }
+
+      case 'GET_SESSIONS': {
+        // Return recent conversation sessions from chrome.storage.local
+        const stored = await chrome.storage.local.get('sessions');
+        const sessions: Array<{ id: string; title: string; createdAt: string }> = stored.sessions || [];
+        sendResponse({ success: true, sessions: sessions.slice(0, 10) });
+        break;
+      }
+
+      case 'SAVE_SESSION': {
+        const { session } = message;
+        const stored = await chrome.storage.local.get('sessions');
+        const sessions: Array<Record<string, unknown>> = stored.sessions || [];
+        const idx = sessions.findIndex((s) => s.id === session.id);
+        if (idx >= 0) {
+          sessions[idx] = session;
+        } else {
+          sessions.unshift(session);
+        }
+        await chrome.storage.local.set({ sessions: sessions.slice(0, 50) });
+        sendResponse({ success: true });
+        break;
+      }
+
+      case 'GET_FILES': {
+        try {
+          const names = await fileSystem.listFiles('/');
+          const entries = names.map((name: string) => ({
+            name: name.replace(/\/$/, ''),
+            type: name.endsWith('/') ? 'directory' : 'file',
+          }));
+          sendResponse({ success: true, files: entries });
+        } catch (err) {
+          sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), files: [] });
+        }
+        break;
+      }
       
       default:
         sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
@@ -210,8 +294,8 @@ async function handlePortMessage(message: Record<string, any>, port: chrome.runt
   try {
     switch (message.type) {
       case 'AGENT_EXECUTE': {
-        const { prompt, model, provider } = message;
-        await executeAgentWithStream(prompt, model, provider, port);
+        const { prompt, model, provider, skill } = message;
+        await executeAgentWithStream(prompt, model, provider, port, skill);
         break;
       }
     }
@@ -223,9 +307,10 @@ async function handlePortMessage(message: Record<string, any>, port: chrome.runt
   }
 }
 
-async function executeAgent(prompt: string, model?: string, provider?: string): Promise<string> {
+async function executeAgent(prompt: string, model?: string, provider?: string, skill?: string): Promise<string> {
   const llmProvider = await getProvider(provider);
-  const agent = new Agent(llmProvider, toolRegistry, { model });
+  const systemPrompt = skill ? getSkillPrompt(skill) : undefined;
+  const agent = new Agent(llmProvider, toolRegistry, { model, systemPrompt });
   
   return new Promise((resolve, reject) => {
     agent.onEvent((event) => {
@@ -240,10 +325,12 @@ async function executeAgentWithStream(
   prompt: string,
   model: string | undefined,
   provider: string | undefined,
-  port: chrome.runtime.Port
+  port: chrome.runtime.Port,
+  skill?: string
 ): Promise<void> {
   const llmProvider = await getProvider(provider);
-  const agent = new Agent(llmProvider, toolRegistry, { model });
+  const systemPrompt = skill ? getSkillPrompt(skill) : undefined;
+  const agent = new Agent(llmProvider, toolRegistry, { model, systemPrompt });
   
   agent.onEvent((event) => {
     port.postMessage({
