@@ -40,3 +40,6 @@ export { CreatePresentationTool, CreateSlidesFromOutlineTool } from './presentat
 
 // Formatter tools
 export { FormatAsJSONTool, FormatAsMarkdownTool, ParseJSONTool, ConvertBetweenFormatsTool } from './formatters.js';
+
+// Web search tools
+export { WebSearchTool, FetchWebPageTool, ResearchTopicTool } from './web-search.js';
