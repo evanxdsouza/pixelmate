@@ -67,7 +67,7 @@ export class CreateSpreadsheetTool implements Tool {
       const filePath = (params.filePath as string) || `/${title}.${ext}`;
 
       if (format === 'google') {
-        return { success: false, error: 'Google Sheets creation requires OAuth setup' };
+        return { success: false, error: 'Use the google_sheets_create tool to create a real Google Sheet. Make sure you have signed in to Google in Settings first.' };
       }
 
       let content: string;

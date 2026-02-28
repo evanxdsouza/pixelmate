@@ -44,7 +44,22 @@ import {
   // Web search
   WebSearchTool,
   FetchWebPageTool,
-  ResearchTopicTool
+  ResearchTopicTool,
+  // Google Workspace
+  GoogleDocsCreateTool,
+  GoogleDocsReadTool,
+  GoogleDocsAppendTool,
+  GoogleSheetsCreateTool,
+  GoogleSheetsReadTool,
+  GoogleSheetsWriteTool,
+  GoogleSlidesCreateTool,
+  GoogleSlidesReadTool,
+  // Gmail
+  GmailListTool,
+  GmailReadTool,
+  GmailSearchTool,
+  GmailSendTool,
+  GmailReplyTool,
 } from '@pixelmate/core';
 import { getApiKey, getChromeStorage } from '@pixelmate/core';
 import { LLMProvider } from '@pixelmate/shared';
@@ -54,6 +69,13 @@ let toolRegistry = new ToolRegistry();
 let fileSystem = new HybridFileSystem();
 let currentAgent: Agent | null = null;
 let activeConnections: Set<chrome.runtime.Port> = new Set();
+
+// Returns the Google OAuth token stored from the last sign-in.
+// Passed to all Google Workspace / Gmail tools so they can make authenticated API calls.
+const getGoogleToken = async (): Promise<string | null> => {
+  const stored = await chrome.storage.session.get('google_access_token');
+  return (stored.google_access_token as string | null) ?? null;
+};
 
 // Initialize filesystem and tools on extension installation
 chrome.runtime.onInstalled.addListener(async () => {
@@ -111,7 +133,24 @@ async function initializeToolRegistry(): Promise<void> {
   toolRegistry.register(new WebSearchTool());
   toolRegistry.register(new FetchWebPageTool());
   toolRegistry.register(new ResearchTopicTool());
-  
+
+  // Register Google Workspace tools (Docs, Sheets, Slides)
+  toolRegistry.register(new GoogleDocsCreateTool(getGoogleToken));
+  toolRegistry.register(new GoogleDocsReadTool(getGoogleToken));
+  toolRegistry.register(new GoogleDocsAppendTool(getGoogleToken));
+  toolRegistry.register(new GoogleSheetsCreateTool(getGoogleToken));
+  toolRegistry.register(new GoogleSheetsReadTool(getGoogleToken));
+  toolRegistry.register(new GoogleSheetsWriteTool(getGoogleToken));
+  toolRegistry.register(new GoogleSlidesCreateTool(getGoogleToken));
+  toolRegistry.register(new GoogleSlidesReadTool(getGoogleToken));
+
+  // Register Gmail tools
+  toolRegistry.register(new GmailListTool(getGoogleToken));
+  toolRegistry.register(new GmailReadTool(getGoogleToken));
+  toolRegistry.register(new GmailSearchTool(getGoogleToken));
+  toolRegistry.register(new GmailSendTool(getGoogleToken));
+  toolRegistry.register(new GmailReplyTool(getGoogleToken));
+
   console.log(`Initialized ${toolRegistry.getAll().length} tools in registry`);
 }
 
@@ -232,7 +271,8 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
           'https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/documents',
           'https://www.googleapis.com/auth/presentations',
-          'https://www.googleapis.com/auth/gmail.readonly'
+          'https://www.googleapis.com/auth/gmail.readonly',
+          'https://www.googleapis.com/auth/gmail.send',
         ];
 
         try {

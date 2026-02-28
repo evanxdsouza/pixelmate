@@ -44,3 +44,25 @@ export { FormatAsJSONTool, FormatAsMarkdownTool, ParseJSONTool, ConvertBetweenFo
 
 // Web search tools
 export { WebSearchTool, FetchWebPageTool, ResearchTopicTool } from './web-search.js';
+
+// Google Workspace tools (Docs, Sheets, Slides)
+export {
+  GoogleDocsCreateTool,
+  GoogleDocsReadTool,
+  GoogleDocsAppendTool,
+  GoogleSheetsCreateTool,
+  GoogleSheetsReadTool,
+  GoogleSheetsWriteTool,
+  GoogleSlidesCreateTool,
+  GoogleSlidesReadTool,
+} from './google-workspace.js';
+export type { GetToken } from './google-workspace.js';
+
+// Gmail tools
+export {
+  GmailListTool,
+  GmailReadTool,
+  GmailSearchTool,
+  GmailSendTool,
+  GmailReplyTool,
+} from './gmail.js';

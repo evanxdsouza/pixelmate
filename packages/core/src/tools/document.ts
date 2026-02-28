@@ -31,8 +31,7 @@ export class CreateDocumentTool implements Tool {
       const format = (params.format as string) || 'docx';
 
       if (format === 'google') {
-        // Google Docs creation would require OAuth integration
-        return { success: false, error: 'Google Docs creation requires OAuth setup' };
+        return { success: false, error: 'Use the google_docs_create tool to create a real Google Doc. Make sure you have signed in to Google in Settings first.' };
       }
 
       // Create simple DOCX-like document
@@ -81,7 +80,7 @@ export class ConvertToDocumentTool implements Tool {
       }
 
       if (format === 'google') {
-        return { success: false, error: 'Google Docs creation requires OAuth setup' };
+        return { success: false, error: 'Use the google_docs_create tool to create a real Google Doc. Make sure you have signed in to Google in Settings first.' };
       }
 
       // Convert markdown to document
