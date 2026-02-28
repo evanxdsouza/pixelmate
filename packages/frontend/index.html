@@ -7,6 +7,11 @@
     <meta name="theme-color" content="#4f46e5" />
     <!-- ChromeOS: tell the browser this app supports Window Controls Overlay -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Content Security Policy: restrict script/connect sources -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' chrome-extension: wss:; worker-src 'self' blob:; frame-ancestors 'none';" />
+    <!-- Prevent clickjacking in browsers that support the X-Frame-Options meta -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <title>PixelMate</title>
   </head>
   <body>

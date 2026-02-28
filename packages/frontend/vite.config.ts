@@ -67,5 +67,26 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
-  }
+    headers: {
+      // Prevent MIME-type sniffing
+      'X-Content-Type-Options': 'nosniff',
+      // Disallow framing by any origin (clickjacking)
+      'X-Frame-Options': 'DENY',
+      // Only send origin in Referer header (privacy)
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      // Restrict powerful browser features
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+      // Content-Security-Policy: allow only same-origin scripts/styles;
+      // chrome-extension: needed for the PWA to communicate with the extension.
+      'Content-Security-Policy': [
+        "default-src 'self'",
+        "script-src 'self' 'wasm-unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",   // unsafe-inline needed for Vite HMR + inline styles
+        "img-src 'self' data: blob:",
+        "connect-src 'self' chrome-extension: wss:",
+        "worker-src 'self' blob:",
+        "frame-ancestors 'none'",
+      ].join('; '),
+    },
+  },
 });
