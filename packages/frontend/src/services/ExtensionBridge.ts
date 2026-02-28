@@ -37,6 +37,14 @@ export interface ToolMeta {
   description: string;
 }
 
+export type OnConfirmCallback = (
+  confirmId: string,
+  toolName: string,
+  params: Record<string, unknown>,
+  dangerLevel: string,
+  description: string
+) => void;
+
 export type OnEventCallback = (event: AgentEvent) => void;
 export type OnCompleteCallback = (result: string) => void;
 export type OnErrorCallback = (error: string) => void;
@@ -222,13 +230,15 @@ export class ExtensionBridge {
    * @param onEvent Called for each agent event (thought, tool_call, etc.)
    * @param onComplete Called with the final result text
    * @param onError Called on unrecoverable error
+   * @param onConfirmRequired Called when a destructive tool needs user approval
    */
   executeAgent(
     prompt: string,
     opts: { skill?: string; model?: string; provider?: string } = {},
     onEvent: OnEventCallback,
     onComplete: OnCompleteCallback,
-    onError: OnErrorCallback
+    onError: OnErrorCallback,
+    onConfirmRequired?: OnConfirmCallback
   ): () => void {
     if (!this.isAvailable()) {
       onError('Chrome extension is not installed or not connected.');
@@ -244,6 +254,17 @@ export class ExtensionBridge {
     this.port.onMessage.addListener((msg: Record<string, unknown>) => {
       if (msg.type === 'AGENT_EVENT') {
         onEvent(msg.event as AgentEvent);
+      } else if (msg.type === 'CONFIRM_REQUIRED') {
+        // Background is asking the user to confirm a destructive tool call
+        if (onConfirmRequired) {
+          onConfirmRequired(
+            msg.confirmId as string,
+            msg.toolName as string,
+            (msg.params ?? {}) as Record<string, unknown>,
+            (msg.dangerLevel as string) ?? 'medium',
+            (msg.description as string) ?? `Run ${msg.toolName}`
+          );
+        }
       } else if (msg.type === 'AGENT_COMPLETE') {
         onComplete(msg.result as string);
         this.port?.disconnect();
@@ -273,6 +294,11 @@ export class ExtensionBridge {
       this.port?.disconnect();
       this.port = null;
     };
+  }
+
+  /** Send the user's approve/deny decision for a pending tool confirmation */
+  sendConfirmResponse(confirmId: string, approved: boolean): void {
+    this.port?.postMessage({ type: 'CONFIRM_RESPONSE', confirmId, approved });
   }
 
   disconnect(): void {

@@ -70,6 +70,46 @@ let fileSystem = new HybridFileSystem();
 let currentAgent: Agent | null = null;
 let activeConnections: Set<chrome.runtime.Port> = new Set();
 
+// Pending confirmation callbacks keyed by confirmId (H1 fix)
+const pendingConfirmations = new Map<string, (approved: boolean) => void>();
+
+// Rate limiting: max 10 AGENT_EXECUTE calls per port per minute (H4 fix)
+const rateLimitMap = new Map<chrome.runtime.Port, { count: number; resetAt: number }>();
+const RATE_LIMIT_COUNT = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+// Origins allowed to communicate externally via externally_connectable (C1 fix)
+const ALLOWED_EXTERNAL_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://pixelmate.app',
+]);
+
+// Only these non-secret keys may be read via GET_CONFIG by external callers (C2 fix)
+const CONFIG_SAFE_KEYS = new Set(['selected_provider', 'selected_model', 'theme', 'language']);
+
+/** Only trust messages from our own extension or the known PWA origins. */
+function isMessageTrusted(sender: chrome.runtime.MessageSender): boolean {
+  // Internal: content scripts and extension pages all carry our extension ID
+  if (sender.id === chrome.runtime.id) return true;
+  // External: externally_connectable pages — validate origin explicitly
+  if (sender.origin && ALLOWED_EXTERNAL_ORIGINS.has(sender.origin)) return true;
+  return false;
+}
+
+/** Simple sliding-window rate limiter per port. Returns false when limit exceeded. */
+function checkRateLimit(port: chrome.runtime.Port): boolean {
+  const now = Date.now();
+  let entry = rateLimitMap.get(port);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  }
+  if (entry.count >= RATE_LIMIT_COUNT) return false;
+  entry.count++;
+  rateLimitMap.set(port, entry);
+  return true;
+}
+
 // Returns the Google OAuth token stored from the last sign-in.
 // Passed to all Google Workspace / Gmail tools so they can make authenticated API calls.
 const getGoogleToken = async (): Promise<string | null> => {
@@ -201,9 +241,14 @@ async function getProvider(providerName?: string): Promise<LLMProvider> {
   }
 }
 
-// Handle messages from popup and PWA
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  handleMessage(message, sendResponse);
+// Handle messages from popup and PWA (single consolidated listener — L1 fix)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Reject messages from untrusted origins (C1 fix)
+  if (!isMessageTrusted(sender)) {
+    sendResponse({ success: false, error: 'Untrusted sender' });
+    return false;
+  }
+  handleMessage(message, sender, sendResponse);
   return true; // Keep channel open for async
 });
 
@@ -220,7 +265,11 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-async function handleMessage(message: Record<string, any>, sendResponse: Function): Promise<void> {
+async function handleMessage(
+  message: Record<string, any>,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: Function
+): Promise<void> {
   try {
     switch (message.type) {
       case 'AGENT_EXECUTE': {
@@ -231,15 +280,22 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
       }
       
       case 'SET_API_KEY': {
+        // API keys stored in local (not sync) so they never leave the device (C3 fix)
         const { provider, apiKey } = message;
-        await chrome.storage.sync.set({ [`api_key:${provider}`]: apiKey });
+        await chrome.storage.local.set({ [`api_key:${provider}`]: apiKey });
         sendResponse({ success: true });
         break;
       }
       
       case 'GET_CONFIG': {
-        const { keys } = message;
-        const values = await getChromeStorage(keys);
+        // Only expose non-secret preference keys — never api_key:* (C2 fix)
+        const requestedKeys: string[] = Array.isArray(message.keys) ? message.keys : [];
+        const safe = requestedKeys.filter(k => CONFIG_SAFE_KEYS.has(k));
+        if (safe.length !== requestedKeys.length) {
+          sendResponse({ success: false, error: 'One or more requested config keys are not permitted' });
+          break;
+        }
+        const values = await getChromeStorage(safe);
         sendResponse({ success: true, values });
         break;
       }
@@ -265,14 +321,13 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
 
       case 'GOOGLE_AUTH': {
         // Request Google OAuth token using chrome.identity
-        // Scopes cover Drive, Sheets, Docs, Slides, Gmail read
+        // gmail.send is NOT included by default — request it lazily via GOOGLE_AUTH_GMAIL_SEND (L2 fix)
         const GOOGLE_SCOPES = [
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/documents',
           'https://www.googleapis.com/auth/presentations',
           'https://www.googleapis.com/auth/gmail.readonly',
-          'https://www.googleapis.com/auth/gmail.send',
         ];
 
         try {
@@ -312,9 +367,12 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
       }
 
       case 'GET_SESSIONS': {
-        // Return recent conversation sessions from chrome.storage.local
+        // Return recent sessions, pruning those older than 30 days (M4 fix)
+        const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
         const stored = await chrome.storage.local.get('sessions');
-        const sessions: Array<{ id: string; title: string; createdAt: string }> = stored.sessions || [];
+        const allSessions: Array<{ id: string; title: string; createdAt: string; savedAt?: number }> = stored.sessions || [];
+        const now = Date.now();
+        const sessions = allSessions.filter(s => !s.savedAt || (now - s.savedAt) < SESSION_TTL_MS);
         sendResponse({ success: true, sessions: sessions.slice(0, 10) });
         break;
       }
@@ -324,10 +382,11 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
         const stored = await chrome.storage.local.get('sessions');
         const sessions: Array<Record<string, unknown>> = stored.sessions || [];
         const idx = sessions.findIndex((s) => s.id === session.id);
+        const withTimestamp = { ...session, savedAt: Date.now() };
         if (idx >= 0) {
-          sessions[idx] = session;
+          sessions[idx] = withTimestamp;
         } else {
-          sessions.unshift(session);
+          sessions.unshift(withTimestamp);
         }
         await chrome.storage.local.set({ sessions: sessions.slice(0, 50) });
         sendResponse({ success: true });
@@ -372,6 +431,37 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
         break;
       }
 
+      // Lazily request gmail.send scope when the user first tries to send email (L2 fix)
+      case 'GOOGLE_AUTH_GMAIL_SEND': {
+        const SEND_SCOPES = ['https://www.googleapis.com/auth/gmail.send'];
+        try {
+          const token = await new Promise<string>((resolve, reject) => {
+            chrome.identity.getAuthToken({ interactive: true, scopes: SEND_SCOPES }, (t) => {
+              if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+              else if (t) resolve(t);
+              else reject(new Error('No token returned'));
+            });
+          });
+          await chrome.storage.session.set({ google_send_token: token });
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+      }
+
+      // Screenshot: only valid when called from a tab context (L1 / consolidated listener)
+      case 'TAKE_SCREENSHOT': {
+        if (!sender.tab?.id) {
+          sendResponse({ error: 'TAKE_SCREENSHOT must be sent from a tab context' });
+          break;
+        }
+        chrome.tabs.captureVisibleTab(sender.tab.windowId!, (dataUrl) => {
+          sendResponse({ dataUrl });
+        });
+        break;
+      }
+
       default:
         sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
     }
@@ -384,8 +474,24 @@ async function handlePortMessage(message: Record<string, any>, port: chrome.runt
   try {
     switch (message.type) {
       case 'AGENT_EXECUTE': {
+        // Enforce rate limit before running the agent (H4 fix)
+        if (!checkRateLimit(port)) {
+          port.postMessage({ type: 'ERROR', error: 'Rate limit exceeded — max 10 agent calls per minute.' });
+          break;
+        }
         const { prompt, model, provider, skill } = message;
         await executeAgentWithStream(prompt, model, provider, port, skill);
+        break;
+      }
+
+      // Frontend sends this in response to a CONFIRM_REQUIRED event (H1 fix)
+      case 'CONFIRM_RESPONSE': {
+        const { confirmId, approved } = message;
+        const resolver = pendingConfirmations.get(confirmId as string);
+        if (resolver) {
+          resolver(Boolean(approved));
+          pendingConfirmations.delete(confirmId as string);
+        }
         break;
       }
     }
@@ -420,7 +526,36 @@ async function executeAgentWithStream(
 ): Promise<void> {
   const llmProvider = await getProvider(provider);
   const systemPrompt = skill ? getSkillPrompt(skill) : undefined;
-  const agent = new Agent(llmProvider, toolRegistry, { model, systemPrompt });
+
+  // Wire up user-facing confirmation for destructive tools (H1 fix)
+  // Look up metadata so the frontend can show an informative dialog
+  const TOOL_DANGER: Record<string, { level: string; description: string }> = {
+    delete_file:     { level: 'critical', description: 'Delete a file or directory permanently' },
+    move_file:       { level: 'high',     description: 'Move or rename a file' },
+    write_file:      { level: 'medium',   description: 'Write content to a file' },
+    browser_navigate:{ level: 'high',     description: 'Navigate to a URL in the browser' },
+    browser_fill:    { level: 'medium',   description: 'Fill a form field with data' },
+    browser_click:   { level: 'medium',   description: 'Click an element on the page' },
+    gmail_send:      { level: 'high',     description: 'Send an email on your behalf' },
+    gmail_reply:     { level: 'high',     description: 'Reply to an email on your behalf' },
+  };
+  const confirmationHandler = (toolName: string, params: Record<string, unknown>): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const confirmId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pendingConfirmations.set(confirmId, resolve);
+      const meta = TOOL_DANGER[toolName] ?? { level: 'medium', description: `Run tool: ${toolName}` };
+      port.postMessage({ type: 'CONFIRM_REQUIRED', confirmId, toolName, params, dangerLevel: meta.level, description: meta.description });
+      // Auto-deny after 60 s if no response to avoid hanging the agent
+      setTimeout(() => {
+        if (pendingConfirmations.has(confirmId)) {
+          pendingConfirmations.delete(confirmId);
+          resolve(false);
+        }
+      }, 60_000);
+    });
+  };
+
+  const agent = new Agent(llmProvider, toolRegistry, { model, systemPrompt, confirmationHandler });
   
   agent.onEvent((event) => {
     port.postMessage({
@@ -435,15 +570,5 @@ async function executeAgentWithStream(
     result
   });
 }
-
-// Take screenshot via chrome.tabs API
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'TAKE_SCREENSHOT' && sender.tab?.id) {
-    chrome.tabs.captureVisibleTab(sender.tab.windowId!, async (dataUrl) => {
-      sendResponse({ dataUrl });
-    });
-    return true;
-  }
-});
 
 console.log('PixelMate service worker initialized');

@@ -31,13 +31,13 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_start",
-      "all_frames": true
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["popup.html"],
+      "resources": ["icons/icon-128.png"],
       "matches": ["<all_urls>"]
     }
   ],

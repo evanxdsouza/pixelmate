@@ -64,11 +64,31 @@ export async function removeChromeStorage(keys: string[]): Promise<void> {
   });
 }
 
+// API keys are stored in chrome.storage.local (not sync) so they remain on-device
+// and are never uploaded to Google's sync servers (C3 fix)
 export async function getApiKey(provider: string): Promise<string | undefined> {
-  const result = await getChromeStorage([`api_key:${provider}`]);
-  return result[`api_key:${provider}`] as string | undefined;
+  const key = `api_key:${provider}`;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([key], (items) => {
+        resolve(items[key] as string | undefined);
+      });
+    });
+  }
+  // Fallback for non-Chrome environments (tests / Node)
+  const stored = localStorage.getItem(`pixelmate:${key}`);
+  return stored ? (JSON.parse(stored) as string) : undefined;
 }
 
 export async function setApiKey(provider: string, apiKey: string): Promise<void> {
-  await setChromeStorage({ [`api_key:${provider}`]: apiKey });
+  const key = `api_key:${provider}`;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [key]: apiKey }, () => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve();
+      });
+    });
+  }
+  localStorage.setItem(`pixelmate:${key}`, JSON.stringify(apiKey));
 }

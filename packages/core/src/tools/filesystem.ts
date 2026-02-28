@@ -163,8 +163,18 @@ export class HybridFileSystem {
   }
 
   validatePath(path: string): boolean {
-    // Prevent directory traversal attacks
+    // Reject empty paths
+    if (!path || typeof path !== 'string') return false;
+    // Reject null bytes (used to bypass extension checks on some platforms)
+    if (path.includes('\0')) return false;
+    // Reject URL-encoded traversal sequences
+    const decoded = decodeURIComponent(path);
+    if (decoded.includes('..')) return false;
+    // Reject raw dot-dot sequences in the original string too
     if (path.includes('..')) return false;
+    // Reject Windows-style absolute paths (e.g. C:\) that could escape OPFS sandbox
+    if (/^[a-zA-Z]:[/\\]/.test(path)) return false;
+    // Allow only absolute POSIX paths starting with /
     if (path.startsWith('/')) return true;
     return false;
   }

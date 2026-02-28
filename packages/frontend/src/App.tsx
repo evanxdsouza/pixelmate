@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { bridge, AgentEvent, FileMeta, Session, ToolMeta } from './services/ExtensionBridge';
+import { bridge, AgentEvent, FileMeta, Session, ToolMeta, OnConfirmCallback } from './services/ExtensionBridge';
 
 interface Message {
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -8,7 +8,8 @@ interface Message {
 }
 
 interface PendingConfirmation {
-  id: string;
+  id: string;       // React key (same as confirmId)
+  confirmId: string; // opaque ID sent back to background
   toolName: string;
   description: string;
   parameters: Record<string, unknown>;
@@ -197,6 +198,20 @@ function App() {
       bridge.saveSession(s).catch(() => {});
     }
 
+    const onConfirmRequired: OnConfirmCallback = (confirmId, toolName, params, dangerLevel, description) => {
+      setConfirmations(prev => [
+        ...prev,
+        {
+          id: confirmId,
+          confirmId,
+          toolName,
+          description,
+          parameters: params,
+          dangerLevel: (dangerLevel as PendingConfirmation['dangerLevel']) ?? 'medium',
+        },
+      ]);
+    };
+
     cancelRef.current = bridge.executeAgent(
       userMsg.content,
       { provider, model: model || undefined, skill: currentSkill || undefined },
@@ -212,7 +227,8 @@ function App() {
         setIsLoading(false);
         setIsTyping(false);
         setStatus('error');
-      }
+      },
+      onConfirmRequired
     );
   };
 
@@ -799,8 +815,14 @@ function App() {
                 </details>
               </div>
               <div className="modal-actions">
-                <button className="deny-btn" onClick={() => setConfirmations(prev => prev.filter(c => c.id !== conf.id))}>Deny</button>
-                <button className="approve-btn" onClick={() => setConfirmations(prev => prev.filter(c => c.id !== conf.id))}>Approve</button>
+                <button className="deny-btn" onClick={() => {
+                  bridge.sendConfirmResponse(conf.confirmId, false);
+                  setConfirmations(prev => prev.filter(c => c.id !== conf.id));
+                }}>Deny</button>
+                <button className="approve-btn" onClick={() => {
+                  bridge.sendConfirmResponse(conf.confirmId, true);
+                  setConfirmations(prev => prev.filter(c => c.id !== conf.id));
+                }}>Approve</button>
               </div>
             </div>
           ))}

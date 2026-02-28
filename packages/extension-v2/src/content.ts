@@ -90,7 +90,8 @@ export async function executeBrowserGetText(selector: string): Promise<string> {
 export async function executeBrowserGetHTML(selector: string): Promise<string> {
   const element = findElement(selector);
   if (!element) throw new Error(`Element not found: ${selector}`);
-  return element.innerHTML;
+  // Return textContent instead of innerHTML to avoid feeding raw markup into the LLM (M1 fix)
+  return element.textContent || element.innerText || '';
 }
 
 export async function executeBrowserScreenshot(): Promise<string> {
@@ -134,7 +135,12 @@ export async function getPageInfo(): Promise<{ url: string; title: string; conte
 }
 
 // Message handler for service worker requests
-chrome.runtime.onMessage.addListener((message: ContentScriptMessage, _sender, sendResponse: (response: ContentScriptResponse) => void) => {
+// Only accept messages from our own extension — reject anything from web pages (C1 fix)
+chrome.runtime.onMessage.addListener((message: ContentScriptMessage, sender, sendResponse: (response: ContentScriptResponse) => void) => {
+  if (sender.id !== chrome.runtime.id) {
+    sendResponse({ success: false, error: 'Untrusted sender' });
+    return false;
+  }
   handleContentScriptMessage(message, sendResponse);
   return true; // Keep channel open for async response
 });
