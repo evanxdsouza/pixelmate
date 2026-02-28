@@ -115,6 +115,32 @@ async function initializeToolRegistry(): Promise<void> {
   console.log(`Initialized ${toolRegistry.getAll().length} tools in registry`);
 }
 
+// Static model lists used as fallbacks when the live API call fails
+// or when no API key is set yet.
+const STATIC_MODELS: Record<string, string[]> = {
+  anthropic: [
+    'claude-opus-4-1',
+    'claude-sonnet-4',
+    'claude-haiku-3',
+    'claude-3.5-sonnet',
+    'claude-3-haiku',
+  ],
+  openai: [
+    'gpt-4o',
+    'gpt-4o-mini',
+    'gpt-4-turbo',
+    'gpt-4',
+    'gpt-3.5-turbo',
+  ],
+  groq: [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+    'gemma2-9b-it',
+  ],
+};
+
 // Get LLM provider based on config
 async function getProvider(providerName?: string): Promise<LLMProvider> {
   const provider = providerName || 'anthropic';
@@ -281,7 +307,31 @@ async function handleMessage(message: Record<string, any>, sendResponse: Functio
         }
         break;
       }
-      
+
+      case 'GET_MODELS': {
+        const prov: string = message.provider || 'anthropic';
+        const fallback = STATIC_MODELS[prov] ?? [];
+        try {
+          // Try live list — requires a valid API key already saved
+          const llmProvider = await getProvider(prov);
+          const liveModels = await llmProvider.listModels();
+          sendResponse({ success: true, models: liveModels.length > 0 ? liveModels : fallback });
+        } catch {
+          // No API key yet or network error — return static list so UI still works
+          sendResponse({ success: true, models: fallback });
+        }
+        break;
+      }
+
+      case 'SET_PROVIDER': {
+        const { provider: prov, model: mod } = message;
+        const data: Record<string, string> = { selected_provider: prov };
+        if (mod !== undefined && mod !== '') data.selected_model = mod;
+        await chrome.storage.sync.set(data);
+        sendResponse({ success: true });
+        break;
+      }
+
       default:
         sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
     }

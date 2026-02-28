@@ -79,6 +79,13 @@ vi.mock('@pixelmate/core', () => ({
 
 import { getChromeStorage } from '@pixelmate/core';
 
+// Same static fallbacks as background.ts
+const STATIC_MODELS: Record<string, string[]> = {
+  anthropic: ['claude-opus-4-1', 'claude-sonnet-4', 'claude-haiku-3', 'claude-3.5-sonnet', 'claude-3-haiku'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+};
+
 interface MockFileSystem {
   initializeOPFS: ReturnType<typeof vi.fn>;
   initializeGoogleDrive: ReturnType<typeof vi.fn>;
@@ -184,6 +191,20 @@ async function handleMessageHelper(
               chrome.identity.removeCachedAuthToken({ token: cached.google_access_token as string });
               await chrome.storage.session.remove('google_access_token');
             }
+            sendResponse({ success: true });
+            break;
+          }
+          case 'GET_MODELS': {
+            const prov: string = (message.provider as string) || 'anthropic';
+            const fallback = STATIC_MODELS[prov] ?? [];
+            sendResponse({ success: true, models: fallback });
+            break;
+          }
+          case 'SET_PROVIDER': {
+            const { provider: prov, model: mod } = message as { provider: string; model?: string };
+            const data: Record<string, string> = { selected_provider: prov };
+            if (mod !== undefined && mod !== '') data.selected_model = mod;
+            await chrome.storage.sync.set(data);
             sendResponse({ success: true });
             break;
           }
@@ -339,6 +360,52 @@ describe('Extension background message handlers', () => {
       );
       expect(resp.success).toBe(true);
       expect(chrome.identity.removeCachedAuthToken).toHaveBeenCalledWith({ token: 'ya29.old' });
+    });
+  });
+
+  describe('GET_MODELS', () => {
+    it('returns the static model list for anthropic', async () => {
+      const resp = await handleMessageHelper({ type: 'GET_MODELS', provider: 'anthropic' }, fileSystem, toolRegistry);
+      expect(resp.success).toBe(true);
+      const models = resp.models as string[];
+      expect(models).toContain('claude-sonnet-4');
+      expect(models.length).toBeGreaterThan(0);
+    });
+
+    it('returns the static model list for groq', async () => {
+      const resp = await handleMessageHelper({ type: 'GET_MODELS', provider: 'groq' }, fileSystem, toolRegistry);
+      expect(resp.success).toBe(true);
+      const models = resp.models as string[];
+      expect(models).toContain('llama-3.3-70b-versatile');
+    });
+
+    it('defaults to anthropic models when no provider specified', async () => {
+      const resp = await handleMessageHelper({ type: 'GET_MODELS' }, fileSystem, toolRegistry);
+      expect(resp.success).toBe(true);
+      const models = resp.models as string[];
+      expect(models.some((m: string) => m.includes('claude'))).toBe(true);
+    });
+  });
+
+  describe('SET_PROVIDER', () => {
+    it('saves selected_provider and selected_model to storage', async () => {
+      const resp = await handleMessageHelper(
+        { type: 'SET_PROVIDER', provider: 'openai', model: 'gpt-4o' },
+        fileSystem, toolRegistry,
+      );
+      expect(resp.success).toBe(true);
+      expect(mockStorageSync.get('selected_provider')).toBe('openai');
+      expect(mockStorageSync.get('selected_model')).toBe('gpt-4o');
+    });
+
+    it('omits selected_model when model is empty string', async () => {
+      const resp = await handleMessageHelper(
+        { type: 'SET_PROVIDER', provider: 'groq', model: '' },
+        fileSystem, toolRegistry,
+      );
+      expect(resp.success).toBe(true);
+      expect(mockStorageSync.get('selected_provider')).toBe('groq');
+      expect(mockStorageSync.has('selected_model')).toBe(false);
     });
   });
 

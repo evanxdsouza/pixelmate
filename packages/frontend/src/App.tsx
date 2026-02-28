@@ -33,6 +33,9 @@ function App() {
   const [extensionAvailable, setExtensionAvailable] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [provider, setProvider] = useState('anthropic');
+  const [model, setModel] = useState('');
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [settingsApiKey, setSettingsApiKey] = useState('');
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [saveKeyStatus, setSaveKeyStatus] = useState('');
@@ -47,9 +50,12 @@ function App() {
     if (available) {
       fetchSessions();
       fetchTools();
-      bridge.getConfig(['selected_provider']).then((cfg) => {
-        if (cfg.selected_provider) setProvider(String(cfg.selected_provider));
-      }).catch(() => {});
+      bridge.getConfig(['selected_provider', 'selected_model']).then((cfg) => {
+        const p = cfg.selected_provider ? String(cfg.selected_provider) : 'anthropic';
+        const m = cfg.selected_model ? String(cfg.selected_model) : '';
+        setProvider(p);
+        fetchModels(p, m);
+      }).catch(() => { fetchModels('anthropic'); });
     }
   }, []);
 
@@ -63,6 +69,19 @@ function App() {
 
   const fetchFiles = async () => {
     try { setFiles(await bridge.getFiles()); } catch (_) {}
+  };
+
+  const fetchModels = async (p: string, preferModel = '') => {
+    setLoadingModels(true);
+    try {
+      const list = await bridge.getModels(p);
+      setModels(list);
+      setModel(list.includes(preferModel) && preferModel ? preferModel : (list[0] ?? ''));
+    } catch (_) {
+      setModels([]);
+    } finally {
+      setLoadingModels(false);
+    }
   };
 
   useEffect(() => {
@@ -136,7 +155,7 @@ function App() {
 
     cancelRef.current = bridge.executeAgent(
       userMsg.content,
-      { provider },
+      { provider, model: model || undefined },
       handleAgentEvent,
       (result) => {
         setMessages(prev => [...prev, { role: 'assistant', content: result }]);
@@ -495,10 +514,42 @@ function App() {
                 <h3>AI Provider</h3>
                 <div className="setting-item">
                   <label htmlFor="provider-select">Provider</label>
-                  <select id="provider-select" value={provider} onChange={(e) => setProvider(e.target.value)}>
+                  <select
+                    id="provider-select"
+                    value={provider}
+                    onChange={(e) => {
+                      const p = e.target.value;
+                      setProvider(p);
+                      setModel('');
+                      fetchModels(p);
+                      bridge.setProvider(p, '').catch(() => {});
+                    }}
+                  >
                     <option value="anthropic">Anthropic (Claude)</option>
                     <option value="openai">OpenAI (GPT)</option>
                     <option value="groq">Groq (Llama / Mixtral)</option>
+                  </select>
+                </div>
+                <div className="setting-item">
+                  <label htmlFor="model-select">Model</label>
+                  <select
+                    id="model-select"
+                    value={model}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setModel(m);
+                      bridge.setProvider(provider, m).catch(() => {});
+                    }}
+                    disabled={loadingModels || models.length === 0}
+                    style={{ minWidth: 200 }}
+                  >
+                    {loadingModels && <option value="">Loading models…</option>}
+                    {models.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    {!loadingModels && models.length === 0 && (
+                      <option value="">No models available</option>
+                    )}
                   </select>
                 </div>
                 <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>

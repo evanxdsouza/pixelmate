@@ -144,6 +144,25 @@ export class ExtensionBridge {
     return res.tools ?? [];
   }
 
+  /** Get available models for a provider (falls back to static list if no API key) */
+  async getModels(provider: string): Promise<string[]> {
+    const res = await this.sendMessage<{ success: boolean; models?: string[]; error?: string }>({
+      type: 'GET_MODELS',
+      provider,
+    });
+    if (!res.success) throw new Error(res.error ?? 'Failed to get models');
+    return res.models ?? [];
+  }
+
+  /** Persist the selected provider and model to chrome.storage.sync */
+  async setProvider(provider: string, model: string): Promise<void> {
+    await this.sendMessage<{ success: boolean; error?: string }>({
+      type: 'SET_PROVIDER',
+      provider,
+      model,
+    });
+  }
+
   /** Get workspace files */
   async getFiles(): Promise<FileMeta[]> {
     const res = await this.sendMessage<{ success: boolean; files?: FileMeta[]; error?: string }>({

@@ -11,7 +11,9 @@ vi.mock('./services/ExtensionBridge', () => {
     getSessions: vi.fn().mockResolvedValue([]),
     getTools: vi.fn().mockResolvedValue([]),
     getFiles: vi.fn().mockResolvedValue([]),
+    getModels: vi.fn().mockResolvedValue(['claude-sonnet-4', 'claude-haiku-3']),
     setApiKey: vi.fn().mockResolvedValue(undefined),
+    setProvider: vi.fn().mockResolvedValue(undefined),
     saveSession: vi.fn().mockResolvedValue(undefined),
     googleSignIn: vi.fn().mockResolvedValue('ya29.test'),
     googleSignOut: vi.fn().mockResolvedValue(undefined),
@@ -126,10 +128,13 @@ describe('App component', () => {
 
   it('settings view shows provider dropdown', async () => {
     render(<App />);
-    fireEvent.click(screen.getByText('Settings'));
+    fireEvent.click(screen.getAllByText(/^settings$/i)[0]);
     await waitFor(() => {
-      const select = screen.getByRole('combobox');
-      expect(select).toBeTruthy();
+      // There are now two selects: provider and model
+      const selects = screen.getAllByRole('combobox');
+      expect(selects.length).toBeGreaterThanOrEqual(1);
+      // The provider select specifically
+      expect(screen.getByLabelText(/provider/i)).toBeTruthy();
     });
   });
 });
