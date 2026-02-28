@@ -1,56 +1,64 @@
 # PixelMate Documentation
 
-Welcome to the PixelMate documentation. This comprehensive guide covers everything you need to know about installing, configuring, and using PixelMate.
+Welcome to the PixelMate documentation. PixelMate is a browser-native AI agent that runs as a **Chrome Extension** (MV3) with an optional **PWA** frontend — no backend server required.
+
+---
 
 ## Table of Contents
 
 ### Getting Started
-- [Installation Guide](./installation.md) - Step-by-step installation instructions
-- [Quick Start](./quickstart.md) - Get up and running in 5 minutes
-- [Configuration](./configuration.md) - Environment variables and settings
+- [Installation Guide](./installation.md) — Load the extension and build from source
+- [Quick Start](./quickstart.md) — Accomplish your first task in 5 minutes
+- [Configuration](./configuration.md) — API keys, providers, and model selection
 
 ### User Guide
-- [User Interface](./ui-guide.md) - Exploring the PixelMate interface
-- [Available Tools](./tools.md) - Complete reference for all tools
-- [Skills](./skills.md) - Built-in skills for common tasks
-- [Security](./security.md) - Understanding the confirmation system
+- [User Interface](./ui-guide.md) — Chat, Files, Tools, and Settings views
+- [Available Tools](./tools.md) — Complete reference for all 38+ tools
+- [Skills](./skills.md) — Built-in skills for common tasks
+- [Security](./security.md) — Confirmation system and danger levels
 
 ### Developer Guide
-- [Architecture](./architecture.md) - System design and components
-- [API Reference](./api.md) - REST API and WebSocket documentation
-- [Tool Development](./tool-development.md) - Creating custom tools
-- [Skill Development](./skill-development.md) - Creating custom skills
-- [Provider Integration](./providers.md) - Adding new LLM providers
+- [Architecture](./architecture.md) — Chrome Extension + PWA + Core package design
+- [API Reference](./api.md) — ExtensionBridge message API
+- [Tool Development](./tool-development.md) — Creating custom tools
+- [Skill Development](./skill-development.md) — Creating custom skills
+- [Provider Integration](./providers.md) — Supported LLM providers and models
 
 ### Advanced Topics
-- [Chrome Extension](./chrome-extension.md) - Browser extension usage
-- [PWA Installation](./pwa.md) - Installing as a desktop app
-- [Troubleshooting](./troubleshooting.md) - Common issues and solutions
-- [Contributing](./contributing.md) - Contributing to PixelMate
+- [Chrome Extension](./chrome-extension.md) — Loading, permissions, and side-panel usage
+- [PWA Installation](./pwa.md) — Installing as a desktop app on Chromebook / Chrome
+- [Troubleshooting](./troubleshooting.md) — Common issues and solutions
+- [Contributing](./contributing.md) — Development setup and contribution guide
 
 ---
 
 ## What is PixelMate?
 
-PixelMate is an AI-powered personal assistant that runs locally on your machine. Inspired by Claude CoWork and OpenClaw, it combines the power of large language models with the ability to interact with your files and web browser.
+PixelMate is an AI-powered personal assistant built as a **Chrome Extension MV3 service worker**. It runs entirely inside your browser — no Node.js server, no cloud relay.
+
+The optional **PWA frontend** (React + Vite) communicates with the extension via `chrome.runtime` messaging (`ExtensionBridge`). This means all LLM calls, file operations, and browser automations happen inside the extension, with your API keys stored in `chrome.storage.sync`.
 
 ### Key Features
 
-- **Local-First**: Runs entirely on your machine with no cloud dependency
-- **Multi-Provider**: Supports OpenAI, Anthropic, Groq, Google, and Ollama
-- **Browser Automation**: Automate web tasks with Playwright
-- **File Operations**: Read, write, and organize your files
-- **Skills System**: Specialized capabilities for common tasks
-- **PWA**: Installable as a desktop application
-- **Real-Time Updates**: WebSocket-powered live updates
+| Feature | Detail |
+|---------|--------|
+| **No Server** | Extension service worker replaces the backend |
+| **Multi-Provider** | Anthropic, OpenAI, Groq — selectable per session |
+| **Model Selection** | Pick any model for your chosen provider |
+| **38+ Tools** | File system, browser automation, documents, web search |
+| **6 Skills** | Document, Email, Presentation, Spreadsheet, Research, Code |
+| **Google Workspace** | OAuth via `chrome.identity`, Drive/Docs/Sheets/Slides |
+| **Hybrid Filesystem** | OPFS + Google Drive + Native File System Access API |
+| **PWA** | Installable on Chromebook or any Chrome browser |
 
-### Use Cases
+### Packages
 
-- **Content Creation**: Generate documents, spreadsheets, presentations
-- **Research**: Web search and data compilation
-- **Data Analysis**: Process and analyze CSV, JSON, Excel files
-- **Automation**: Browser workflows and task automation
-- **Meeting Management**: Summaries and action item extraction
+| Package | Path | Purpose |
+|---------|------|---------|
+| `@pixelmate/shared` | `packages/shared` | TypeScript types & interfaces |
+| `@pixelmate/core` | `packages/core` | Agent, ToolRegistry, Providers, Skills |
+| `@pixelmate/extension` | `packages/extension-v2` | Chrome Extension MV3 service worker |
+| `@pixelmate/frontend` | `packages/frontend` | React 18 + Vite PWA |
 
 ---
 
@@ -58,15 +66,14 @@ PixelMate is an AI-powered personal assistant that runs locally on your machine.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 0.1.0 | Feb 2026 | Initial release with core features |
+| 0.1.0 | Feb 2026 | Chrome Extension MV3, 38+ tools, 3 providers, model selection, Google OAuth |
 
 ---
 
 ## Getting Help
 
-- **Issues**: Report bugs at https://github.com/pixelmate/pixelmate/issues
-- **Discussions**: Join the community at https://github.com/pixelmate/pixelmate/discussions
-- **Documentation**: You're reading it!
+- **Issues**: https://github.com/pixelmate/pixelmate/issues
+- **Discussions**: https://github.com/pixelmate/pixelmate/discussions
 
 ---
 

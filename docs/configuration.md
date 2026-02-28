@@ -1,32 +1,92 @@
 # Configuration Guide
 
-Complete guide to configuring PixelMate for your needs.
+PixelMate stores all configuration in **`chrome.storage.sync`** — no `.env` file or backend server is needed.  
+Settings are managed through the extension's **Settings** view.
 
-## Environment Variables
+---
 
-PixelMate uses environment variables for configuration. Create a `.env` file in the project root:
+## Accessing Settings
+
+1. Click the PixelMate toolbar icon
+2. Click the **Settings** icon (⚙) in the left sidebar
+
+---
+
+## AI Provider
+
+### Selecting a Provider
+
+Use the **Provider** dropdown to choose between:
+
+| Provider | Models Available |
+|----------|----------------|
+| Anthropic (Claude) | claude-opus-4-1, claude-sonnet-4, claude-haiku-3, and more |
+| OpenAI (GPT) | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo, and more |
+| Groq (Llama / Mixtral) | llama-3.3-70b-versatile, mixtral-8x7b-32768, and more |
+
+### Selecting a Model
+
+After choosing a provider the **Model** dropdown auto-populates. If an API key for that provider is already saved, the live model list is fetched from the provider's API. Otherwise, a curated static list is shown as a fallback.
+
+The selection is persisted immediately to `chrome.storage.sync`.
+
+### Saving Your API Key
+
+1. Choose a provider
+2. Paste your API key into the **API Key** field
+3. Click **Save Key**
+
+Keys are stored as `api_key:<provider>` in `chrome.storage.sync` and are scoped to your Chrome profile.
+
+> **Security**: Keys never leave your browser. All LLM calls are made directly from the extension service worker to the provider's API.
+
+---
+
+## Google Workspace
+
+Click **Connect Google** to authenticate via `chrome.identity` OAuth. This grants access to:
+
+- Google Drive (file read/write)
+- Google Docs
+- Google Sheets
+- Google Slides
+- Gmail (read-only)
+
+The access token is stored in `chrome.storage.session` (clears when Chrome closes).
+
+Click **Sign Out** to revoke the cached token.
+
+---
+
+## Local Files
+
+Click **Grant Access** to open the Native File System picker and give PixelMate access to a local folder. This supplements the built-in OPFS (Origin Private File System) storage.
+
+---
+
+## Storage Details
+
+| Key | Storage Area | Description |
+|-----|-------------|-------------|
+| `api_key:anthropic` | `sync` | Anthropic API key |
+| `api_key:openai` | `sync` | OpenAI API key |
+| `api_key:groq` | `sync` | Groq API key |
+| `selected_provider` | `sync` | Last-used provider |
+| `selected_model` | `sync` | Last-used model |
+| `sessions` | `local` | Up to 50 recent sessions |
+| `google_access_token` | `session` | Google OAuth token (ephemeral) |
+
+---
+
+## PWA Environment Variable (Optional)
+
+If you run the standalone PWA frontend (`packages/frontend`) on a different origin than `localhost:5173`, create a `.env.local` in `packages/frontend/`:
 
 ```bash
-cp .env.example .env
+VITE_EXTENSION_ID=your_extension_id_here
 ```
 
-### Required Configuration
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key | `sk-ant-...` |
-| `OPENAI_API_KEY` | OpenAI API key | `sk-...` |
-
-**Note**: You need at least one LLM provider configured.
-
-### Optional Configuration
-
-#### Server Settings
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3001` | HTTP server port |
-| `NODE_ENV` | `development` | Environment mode |
-| `WORKING_DIRECTORY` | `./workspace` | Default working directory |
+Find your extension ID at `chrome://extensions`. This is only needed when the PWA origin is not listed in the extension's `externally_connectable` manifest field.
 
 #### LLM Providers
 | Variable | Default | Description |

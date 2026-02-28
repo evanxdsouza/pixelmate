@@ -1,569 +1,352 @@
 # API Reference
 
-Complete API documentation for PixelMate backend services.
+PixelMate uses `chrome.runtime` messaging between the PWA/popup and the extension service worker. There is no HTTP server.
+
+Messages are sent via:
+- **`chrome.runtime.sendMessage`** — one-shot request/response (handled by `handleMessage()`)
+- **`chrome.runtime.connect('agent')`** — persistent port for streaming agent runs (handled by `handlePortMessage()`)
 
 ---
 
-## Base URL
+## One-Shot Messages
 
-```
-http://localhost:3001
-```
+All one-shot messages expect `sendResponse({ success: boolean, ...data })`. If `success` is `false`, `error` contains the message.
 
 ---
 
-## Health Check
+### `SET_API_KEY`
 
-### GET /health
+Save an API key for a provider to `chrome.storage.sync`.
 
-Check if the server is running.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-02-26T12:00:00.000Z"
-}
+**Request**
+```ts
+{ type: 'SET_API_KEY', provider: string, apiKey: string }
 ```
 
----
-
-## Agent API
-
-### POST /api/agent/start
-
-Start a new agent task.
-
-**Request:**
-```json
-{
-  "prompt": "Your task description",
-  "model": "gpt-4",           // Optional
-  "provider": "openai"        // Optional
-}
-```
-
-**Response:**
-```json
-{
-  "taskId": "uuid-string",
-  "status": "started"
-}
+**Response**
+```ts
+{ success: true }
 ```
 
 ---
 
-### GET /api/agent/status/:taskId
+### `GET_CONFIG`
 
-Get task status.
+Read one or more values from `chrome.storage.sync`.
 
-**Response:**
-```json
-{
-  "taskId": "uuid-string",
-  "state": "thinking",
-  "workingDirectory": "/path/to/workspace"
-}
+**Request**
+```ts
+{ type: 'GET_CONFIG', keys: string[] }
 ```
 
-**States:**
-- `idle` - Not started
-- `thinking` - Processing
-- `acting` - Executing tools
-- `done` - Completed
-- `error` - Failed
+**Response**
+```ts
+{ success: true, values: Record<string, unknown> }
+```
+
+**Common keys**
+
+| Key | Description |
+|-----|-------------|
+| `selected_provider` | Active provider ID (`'anthropic'` \| `'openai'` \| `'groq'`) |
+| `selected_model` | Active model string |
+| `api_key:anthropic` | Anthropic API key |
+| `api_key:openai` | OpenAI API key |
+| `api_key:groq` | Groq API key |
 
 ---
 
-### POST /api/agent/cancel/:taskId
+### `GET_MODELS`
 
-Cancel a running task.
+Get available model IDs for a provider. Tries a live API call first; falls back to a static list if the key isn't set yet.
 
-**Response:**
-```json
-{
-  "taskId": "uuid-string",
-  "status": "cancelled"
-}
+**Request**
+```ts
+{ type: 'GET_MODELS', provider: string }
+```
+
+**Response**
+```ts
+{ success: true, models: string[] }
 ```
 
 ---
 
-## Tools API
+### `SET_PROVIDER`
 
-### GET /api/tools
+Persist the selected provider (and optionally model) to `chrome.storage.sync`.
 
-Get list of available tools.
+**Request**
+```ts
+{ type: 'SET_PROVIDER', provider: string, model?: string }
+```
 
-**Response:**
-```json
+**Response**
+```ts
+{ success: true }
+```
+
+---
+
+### `GET_TOOLS`
+
+Return the list of all registered tools.
+
+**Request**
+```ts
+{ type: 'GET_TOOLS' }
+```
+
+**Response**
+```ts
 {
-  "tools": [
-    {
-      "name": "read_file",
-      "description": "Read file contents",
-      "parameters": [
-        {
-          "name": "path",
-          "description": "File path",
-          "type": "string",
-          "required": true
-        }
-      ]
-    }
-  ]
+  success: true,
+  tools: Array<{
+    name: string;
+    description: string;
+    parameters: ToolParameter[];
+  }>
 }
 ```
 
 ---
 
-## Files API
+### `GET_FILES`
 
-### GET /api/files
+List all files and directories in the workspace root (`'/'`).
 
-List files in a directory.
+**Request**
+```ts
+{ type: 'GET_FILES' }
+```
 
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | string | Directory path (default: ".") |
-
-**Response:**
-```json
+**Response**
+```ts
 {
-  "files": [
-    {
-      "name": "document.txt",
-      "type": "file",
-      "size": 1024,
-      "modified": "2026-02-26T12:00:00.000Z"
-    }
-  ]
+  success: true,
+  files: Array<{
+    name: string;          // filename without trailing /
+    type: 'file' | 'directory';
+  }>
 }
 ```
 
 ---
 
-### POST /api/files/read
+### `GET_SESSIONS`
 
-Read a file.
+Return up to the 10 most recent sessions from `chrome.storage.local`.
 
-**Request:**
-```json
-{
-  "path": "document.txt"
-}
+**Request**
+```ts
+{ type: 'GET_SESSIONS' }
 ```
 
-**Response:**
-```json
-{
-  "content": "File contents here..."
-}
+**Response**
+```ts
+{ success: true, sessions: Array<{ id: string; title: string; createdAt: string }> }
 ```
 
 ---
 
-### POST /api/files/write
+### `SAVE_SESSION`
 
-Write to a file.
+Upsert a session. Keeps the most recent 50 sessions.
 
-**Request:**
-```json
-{
-  "path": "output.txt",
-  "content": "File content"
-}
+**Request**
+```ts
+{ type: 'SAVE_SESSION', session: { id: string; title: string; createdAt: string } }
 ```
 
-**Response:**
-```json
-{
-  "success": true
-}
+**Response**
+```ts
+{ success: true }
 ```
 
 ---
 
-## Sessions API
+### `REQUEST_FILE_ACCESS`
 
-### POST /api/sessions
+Trigger the File System Access API native picker to grant access to a local directory.
 
-Create a new session.
+**Request**
+```ts
+{ type: 'REQUEST_FILE_ACCESS' }
+```
 
-**Request:**
-```json
+**Response**
+```ts
+{ success: true }
+```
+
+---
+
+### `INIT_GOOGLE_DRIVE`
+
+Initialise the Google Drive layer in `HybridFileSystem` with an existing access token.
+
+**Request**
+```ts
+{ type: 'INIT_GOOGLE_DRIVE', accessToken: string }
+```
+
+**Response**
+```ts
+{ success: true }
+```
+
+---
+
+### `GOOGLE_AUTH`
+
+Start interactive Google OAuth via `chrome.identity.getAuthToken()`. Grants Drive, Docs, Sheets, Slides, and Gmail read scopes. On success the token is stored in `chrome.storage.session`.
+
+**Request**
+```ts
+{ type: 'GOOGLE_AUTH' }
+```
+
+**Response**
+```ts
+{ success: true, token: string }
+```
+
+---
+
+### `GOOGLE_SIGNOUT`
+
+Revoke and remove the cached Google access token.
+
+**Request**
+```ts
+{ type: 'GOOGLE_SIGNOUT' }
+```
+
+**Response**
+```ts
+{ success: true }
+```
+
+---
+
+### `AGENT_EXECUTE` (one-shot)
+
+Run an agent task synchronously and wait for the final result. Use the port-based version for real-time streaming.
+
+**Request**
+```ts
 {
-  "title": "My Session"
+  type: 'AGENT_EXECUTE';
+  prompt: string;
+  provider?: string;   // defaults to saved provider
+  model?: string;      // defaults to provider default
+  skill?: string;      // 'document' | 'email' | 'presentation' | 'spreadsheet' | 'research' | 'code'
 }
 ```
 
-**Response:**
-```json
+**Response**
+```ts
+{ success: true, result: string }
+```
+
+---
+
+## Streaming Agent Runs (Port)
+
+For real-time event streaming, open a persistent connection:
+
+```ts
+const port = chrome.runtime.connect({ name: 'agent' });
+```
+
+### Client → Service Worker
+
+#### `AGENT_EXECUTE`
+
+```ts
+port.postMessage({
+  type: 'AGENT_EXECUTE',
+  prompt: string,
+  provider?: string,
+  model?: string,
+  skill?: string,
+});
+```
+
+### Service Worker → Client
+
+#### `AGENT_EVENT`
+
+Emitted for each event in the agent loop.
+
+```ts
 {
-  "session": {
-    "id": "session-uuid",
-    "title": "My Session",
-    "createdAt": "2026-02-26T12:00:00.000Z"
+  type: 'AGENT_EVENT',
+  event: {
+    type: 'state_change' | 'thought' | 'tool_call' | 'tool_result' | 'message' | 'error';
+    // depending on event.type one of:
+    state?: 'idle' | 'thinking' | 'acting' | 'done' | 'error';
+    thought?: string;
+    toolCall?: { name: string; parameters?: Record<string, unknown> };
+    toolResult?: { success: boolean; output?: string; error?: string };
+    message?: string;
+    error?: string;
   }
 }
 ```
 
----
+#### `AGENT_COMPLETE`
 
-### GET /api/sessions
+Sent when the agent loop finishes. The port is closed by the service worker after this.
 
-List sessions.
+```ts
+{ type: 'AGENT_COMPLETE', result: string }
+```
 
-**Query Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | number | 10 | Number of sessions |
+#### `ERROR`
 
-**Response:**
-```json
-{
-  "sessions": [
-    {
-      "id": "session-uuid",
-      "title": "Session 1",
-      "createdAt": "2026-02-26T12:00:00.000Z"
-    }
-  ]
-}
+Sent on unrecoverable errors.
+
+```ts
+{ type: 'ERROR', error: string }
 ```
 
 ---
 
-### GET /api/sessions/:id
+## ExtensionBridge (Frontend)
 
-Get session with messages.
+The PWA wraps all of the above in a typed singleton:
 
-**Response:**
-```json
-{
-  "session": { ... },
-  "messages": [
-    {
-      "id": "msg-uuid",
-      "role": "user",
-      "content": "Hello",
-      "timestamp": "2026-02-26T12:00:00.000Z"
-    }
-  ]
-}
+```ts
+import { bridge } from './services/ExtensionBridge';
+
+// Check extension availability
+bool = bridge.isAvailable();
+
+// One-shot helpers
+await bridge.setApiKey('anthropic', 'sk-ant-…');
+await bridge.setProvider('openai', 'gpt-4o');
+const models  = await bridge.getModels('anthropic');    // string[]
+const config  = await bridge.getConfig(['selected_provider']);
+const tools   = await bridge.getTools();
+const files   = await bridge.getFiles();
+const sessions = await bridge.getSessions();
+await bridge.saveSession({ id, title, createdAt });
+const token   = await bridge.googleSignIn();
+await bridge.googleSignOut();
+await bridge.requestFileAccess();
+
+// Streaming execution — returns a cancel() function
+const cancel = bridge.executeAgent(
+  prompt,
+  { provider: 'anthropic', model: 'claude-sonnet-4', skill: 'research' },
+  (event) => console.log(event),            // onEvent
+  (result) => console.log(result),          // onComplete
+  (error) => console.error(error),          // onError
+);
+
+// Cancel mid-run
+cancel();
 ```
 
----
 
-### GET /api/sessions/:id/messages
-
-Get session messages.
-
-**Response:**
-```json
-{
-  "messages": [...]
-}
-```
-
----
-
-### POST /api/sessions/:id/messages
-
-Add message to session.
-
-**Request:**
-```json
-{
-  "role": "user",
-  "content": "My message"
-}
-```
-
-**Response:**
-```json
-{
-  "message": {
-    "id": "msg-uuid",
-    "role": "user",
-    "content": "My message",
-    "timestamp": "2026-02-26T12:00:00.000Z"
-  }
-}
-```
-
----
-
-## Preferences API
-
-### GET /api/preferences
-
-Get all preferences.
-
-**Response:**
-```json
-{
-  "preferences": {
-    "theme": "dark",
-    "model": "gpt-4"
-  }
-}
-```
-
----
-
-### GET /api/preferences/:key
-
-Get a specific preference.
-
-**Response:**
-```json
-{
-  "key": "theme",
-  "value": "dark"
-}
-```
-
----
-
-### POST /api/preferences
-
-Set a preference.
-
-**Request:**
-```json
-{
-  "key": "theme",
-  "value": "dark"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true
-}
-```
-
----
-
-## Skills API
-
-### GET /api/skills
-
-Get available skills.
-
-**Response:**
-```json
-{
-  "skills": [
-    {
-      "name": "Research",
-      "description": "Conduct web research...",
-      "examples": ["Find info about X"],
-      "parameters": [...]
-    }
-  ]
-}
-```
-
----
-
-## Configuration API
-
-### GET /api/config
-
-Get configuration info.
-
-**Response:**
-```json
-{
-  "workingDirectory": "./workspace",
-  "maxTurns": 10,
-  "defaultProvider": "openai"
-}
-```
-
----
-
-## Confirmation API
-
-### GET /api/confirmations
-
-Get pending confirmations.
-
-**Response:**
-```json
-{
-  "confirmations": [
-    {
-      "id": "conf-uuid",
-      "toolName": "write_file",
-      "parameters": { ... },
-      "dangerLevel": "medium",
-      "description": "Write content to file",
-      "taskId": "task-uuid",
-      "requestedAt": "2026-02-26T12:00:00.000Z"
-    }
-  ]
-}
-```
-
----
-
-### POST /api/confirmations/:id/approve
-
-Approve a confirmation.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Confirmation approved"
-}
-```
-
----
-
-### POST /api/confirmations/:id/deny
-
-Deny a confirmation.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Confirmation denied"
-}
-```
-
----
-
-## WebSocket API
-
-### Connection
-
-```
-ws://localhost:3001/ws
-```
-
-### Message Types
-
-#### Client → Server
-
-**start_task**
-```json
-{
-  "type": "start_task",
-  "prompt": "Your task",
-  "model": "gpt-4",
-  "provider": "openai"
-}
-```
-
-**confirmation_response**
-```json
-{
-  "type": "confirmation_response",
-  "confirmationId": "conf-uuid",
-  "approved": true
-}
-```
-
-#### Server → Client
-
-**task_started**
-```json
-{
-  "type": "task_started",
-  "taskId": "uuid"
-}
-```
-
-**agent_event**
-```json
-{
-  "type": "agent_event",
-  "taskId": "uuid",
-  "event": {
-    "type": "thought",
-    "thought": "I'll help you with that..."
-  }
-}
-```
-
-**Agent Event Types:**
-- `state_change` - Agent state changed
-- `thought` - Agent reasoning
-- `tool_call` - Tool being executed
-- `tool_result` - Tool execution result
-- `message` - Message to user
-- `error` - Error occurred
-
-**task_completed**
-```json
-{
-  "type": "task_completed",
-  "taskId": "uuid",
-  "result": "Final response..."
-}
-```
-
-**task_error**
-```json
-{
-  "type": "task_error",
-  "taskId": "uuid",
-  "error": "Error message"
-}
-```
-
-**confirmation_request**
-```json
-{
-  "type": "confirmation_request",
-  "confirmation": {
-    "id": "conf-uuid",
-    "toolName": "write_file",
-    "dangerLevel": "medium",
-    "description": "Write content to file"
-  }
-}
-```
-
----
-
-## Error Responses
-
-All endpoints may return error responses:
-
-```json
-{
-  "error": "Error message"
-}
-```
-
-**Common HTTP Status Codes:**
-| Code | Description |
-|------|-------------|
-| 400 | Bad Request |
-| 404 | Not Found |
-| 500 | Internal Server Error |
-
----
-
-## Rate Limits
-
-Currently no rate limits enforced. For production, consider adding:
-- Request throttling
-- Concurrent task limits
-- API key authentication
-
----
-
-## Next Steps
-
-- [Architecture](./architecture.md) - System design
-- [Tools Reference](./tools.md) - Available tools
-- [Configuration](./configuration.md) - Settings

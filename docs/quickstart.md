@@ -4,26 +4,101 @@ Get PixelMate running and complete your first task in under 5 minutes.
 
 ## Prerequisites
 
-- [ ] Node.js 18+ installed
-- [ ] At least one LLM API key configured
-- [ ] Backend server running on port 3001
-- [ ] Frontend accessible at http://localhost:3000
+- [ ] Chrome or Chromium browser
+- [ ] At least one LLM provider API key (Anthropic, OpenAI, or Groq)
+- [ ] Node.js 20 + pnpm (only needed if building from source)
 
 ---
 
-## Step 1: Launch PixelMate
+## Option A — Load Pre-Built Extension
 
-1. Open your terminal and start the backend:
-   ```bash
-   npm run dev:backend
-   ```
+If you have the built extension zip:
 
-2. In a new terminal, start the frontend:
-   ```bash
-   npm run dev:frontend
-   ```
+1. Go to `chrome://extensions`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** and select the `packages/extension-v2/dist` folder
+4. Pin the PixelMate icon to the toolbar
+5. Click the icon → enter your API key in **Settings**
 
-3. Open http://localhost:3000 in your browser
+Skip to [Step 3](#step-3-configure-your-api-key).
+
+---
+
+## Option B — Build from Source
+
+### Step 1: Install and Build
+
+```bash
+git clone https://github.com/pixelmate/pixelmate.git
+cd pixelmate
+
+# Install all workspace dependencies
+pnpm install
+
+# Build everything
+pnpm run build
+```
+
+The built extension is at `packages/extension-v2/dist/`.
+
+### Step 2: Load the Extension
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked** → select `packages/extension-v2/dist`
+4. The PixelMate icon appears in the toolbar
+
+---
+
+## Step 3: Configure Your API Key
+
+1. Click the PixelMate toolbar icon
+2. Go to **Settings** (gear icon in the sidebar)
+3. Under **AI Provider**, choose your provider (Anthropic, OpenAI, or Groq)
+4. Select your preferred **Model** from the dropdown
+5. Paste your API key and click **Save Key**
+
+> Your API key is stored in `chrome.storage.sync` — it never leaves your browser.
+
+---
+
+## Step 4: Start Chatting
+
+Click the PixelMate icon → type a message → press **Enter** or click **Send**.
+
+### Example Tasks
+
+```
+Create a markdown document summarizing today's news about AI
+```
+
+```
+Search the web for the latest PyPI releases and write a CSV summary
+```
+
+```
+List all files in my workspace and organize them into folders
+```
+
+---
+
+## Option C — PWA Frontend (Advanced)
+
+For a full-page PWA experience alongside the extension:
+
+```bash
+pnpm --filter @pixelmate/frontend dev
+```
+
+Open `http://localhost:5173` — it auto-connects to the installed extension via `chrome.runtime`.
+
+---
+
+## Verify Everything Works
+
+- Extension icon is visible and shows **Extension active** (green dot)
+- Settings shows your provider and API key saved
+- Typing a message in chat returns a response
 
 You should see the PixelMate chat interface:
 

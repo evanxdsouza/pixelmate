@@ -1,25 +1,141 @@
 # Installation Guide
 
-This guide covers all installation methods and prerequisites for PixelMate.
+PixelMate is a **Chrome Extension MV3** — there is no backend server to run.  
+This guide covers loading the pre-built extension and building from source.
 
-## Prerequisites
+---
 
-### System Requirements
+## System Requirements
 
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| Node.js | 18.x | 20.x LTS |
-| Memory (RAM) | 4 GB | 8 GB |
-| Disk Space | 500 MB | 1 GB |
-| Operating System | macOS 10.15+, Windows 10+, Linux | Latest |
+| Component | Requirement |
+|-----------|-------------|
+| Browser | Chrome 112+ or any Chromium-based browser |
+| OS | ChromeOS, Windows 10+, macOS 12+, Linux |
+| Node.js | 20.x LTS (**only if building from source**) |
+| pnpm | 9.x (**only if building from source**) |
 
-### Required Software
+---
 
-1. **Node.js** - Download from https://nodejs.org
-2. **npm** - Comes with Node.js
-3. **Git** - For version control (optional)
+## API Keys
 
-### API Keys
+You need at least one LLM provider API key. Keys are entered via the extension's **Settings** UI — no `.env` file needed.
+
+| Provider | Default Model | Get API Key |
+|----------|--------------|-------------|
+| Anthropic | `claude-sonnet-4` | https://console.anthropic.com |
+| OpenAI | `gpt-4o` | https://platform.openai.com/api-keys |
+| Groq | `llama-3.3-70b-versatile` | https://console.groq.com |
+
+---
+
+## Method 1 — Load Unpacked (Development)
+
+### 1. Clone and build
+
+```bash
+git clone https://github.com/pixelmate/pixelmate.git
+cd pixelmate
+pnpm install
+pnpm run build
+```
+
+### 2. Load in Chrome
+
+1. Navigate to `chrome://extensions`
+2. Enable the **Developer mode** toggle (top right)
+3. Click **Load unpacked**
+4. Select the folder `packages/extension-v2/dist`
+
+The PixelMate icon appears in the Chrome toolbar.
+
+### 3. Configure API key
+
+1. Click the PixelMate icon
+2. Go to **Settings → AI Provider**
+3. Choose your provider, select a model, then paste your API key and click **Save Key**
+
+---
+
+## Method 2 — Chrome Web Store *(coming soon)*
+
+The extension will be available on the Chrome Web Store. Once published, one-click install will be available.
+
+---
+
+## Building from Source — Detail
+
+### Prerequisites
+
+```bash
+# Install pnpm if not already installed
+npm install -g pnpm@9
+
+# Verify
+node --version   # should be 20.x
+pnpm --version   # should be 9.x
+```
+
+### Workspace layout
+
+```
+pixelmate/
+├── packages/
+│   ├── shared/          # @pixelmate/shared — TypeScript types
+│   ├── core/            # @pixelmate/core   — Agent, tools, providers, skills
+│   ├── extension-v2/    # @pixelmate/extension — Chrome Extension MV3
+│   └── frontend/        # @pixelmate/frontend — React 18 + Vite PWA
+└── pnpm-workspace.yaml
+```
+
+### Build commands
+
+```bash
+# Build all packages
+pnpm run build
+
+# Build a single package
+pnpm --filter @pixelmate/core run build
+pnpm --filter @pixelmate/extension run build
+pnpm --filter @pixelmate/frontend run build
+
+# Run tests
+pnpm run test
+
+# Development (hot-reload PWA frontend only)
+pnpm --filter @pixelmate/frontend dev
+```
+
+### Output
+
+After `pnpm run build`, the loadable extension is at:
+
+```
+packages/extension-v2/dist/
+├── manifest.json
+├── background.js       ← service worker
+├── content.js          ← content script
+├── popup.html          ← extension popup
+├── popup.js
+└── assets/
+    ├── index-*.css
+    └── index-*.js      ← PWA bundle (served from popup)
+```
+
+---
+
+## Updating
+
+```bash
+git pull
+pnpm install
+pnpm run build
+```
+
+Then refresh the extension at `chrome://extensions` (click the reload ↺ icon next to PixelMate).
+
+---
+
+## API Keys
 
 You need at least one LLM provider API key:
 

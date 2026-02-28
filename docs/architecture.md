@@ -1,425 +1,227 @@
 # Architecture
 
-Detailed overview of PixelMate's system design and component interactions.
+> This document reflects the **v0.1.0** implementation: a Chrome Extension MV3 service worker + optional React PWA, with no backend Node.js server.
+
+PixelMate's architecture centers on a **Chrome Extension MV3 service worker** that acts as both the AI agent runtime and the "backend". A React PWA connects to it via the `ExtensionBridge` using `chrome.runtime` messaging, with no Node.js server required.
 
 ---
 
 ## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         PixelMate                                │
-│                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │   Frontend   │◄──►│   Backend    │◄──►│   LLM APIs   │      │
-│  │   (React)    │    │  (Express)   │    │ (OpenAI/     │      │
-│  │              │    │              │    │  Anthropic)  │      │
-│  └──────────────┘    └──────────────┘    └──────────────┘      │
-│         │                    │                     │              │
-│         │                    ▼                     │              │
-│         │            ┌──────────────┐             │              │
-│         │            │   Tools      │◄────────────┘              │
-│         │            │ (Files,     │                           │
-│         │            │  Browser,   │                           │
-│         │            │  Web)       │                           │
-│         │            └──────────────┘                           │
-│         │                    │                                  │
-│         ▼                    ▼                                  │
-│  ┌──────────────┐    ┌──────────────┐                           │
-│  │    PWA      │    │   SQLite     │                           │
-│  │  (Install)  │    │  (Memory)    │                           │
-│  └──────────────┘    └──────────────┘                           │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Browser                                                            │
+│                                                                     │
+│  ┌─────────────────────────┐    chrome.runtime messaging           │
+│  │  Frontend (React PWA)   │◄──────────────────────────────┐       │
+│  │  packages/frontend      │                               │       │
+│  │  ExtensionBridge        │                               │       │
+│  └─────────────────────────┘                               │       │
+│                                                             │       │
+│  ┌──────────────────────────────────────────────────────────▼────┐ │
+│  │  Extension Service Worker (packages/extension-v2)             │ │
+│  │                                                               │ │
+│  │  handleMessage()  ◄── one-shot messages (sendMessage)        │ │
+│  │  handlePortMessage() ◄── streaming runs (connect 'agent')    │ │
+│  │                                                               │ │
+│  │  ┌─────────────┐   ┌──────────────┐   ┌─────────────────┐   │ │
+│  │  │  Agent      │   │ ToolRegistry │   │ HybridFileSys.  │   │ │
+│  │  │ (core)      │   │  (core)      │   │  OPFS + Drive   │   │ │
+│  │  └──────┬──────┘   └──────┬───────┘   └─────────────────┘   │ │
+│  │         │                 │                                   │ │
+│  │         ▼                 ▼                                   │ │
+│  │  ┌─────────────────────────────┐                             │ │
+│  │  │  LLM Provider               │                             │ │
+│  │  │  Anthropic / OpenAI / Groq  │◄──── API keys from         │ │
+│  │  └─────────────────────────────┘      chrome.storage.sync   │ │
+│  └───────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Core Components
+## Packages
 
-### 1. Frontend (`packages/frontend`)
+| Package | Path | Role |
+|---------|------|------|
+| `@pixelmate/shared` | `packages/shared` | TypeScript types and interfaces |
+| `@pixelmate/core` | `packages/core` | Agent loop, ToolRegistry, Providers, Skills |
+| `@pixelmate/extension` | `packages/extension-v2` | MV3 service worker, popup React app |
+| `@pixelmate/frontend` | `packages/frontend` | Standalone React PWA |
 
-**Technology:** React + Vite + TypeScript
+### Dependency Graph
 
-**Purpose:** User interface for interacting with PixelMate
-
-**Key Files:**
-- `src/App.tsx` - Main application component
-- `src/main.tsx` - Application entry point
-- `src/index.css` - Styling
-
-**Features:**
-- Real-time chat interface
-- WebSocket connection for live updates
-- Confirmation modal for dangerous actions
-- PWA support for offline usage
-
----
-
-### 2. Backend (`packages/backend`)
-
-**Technology:** Node.js + Express + TypeScript
-
-**Purpose:** Server-side processing, tool execution, LLM interaction
-
-**Directory Structure:**
 ```
-packages/backend/src/
-├── index.ts              # Entry point, server setup
-├── agents/               # Agent implementation
-│   ├── agent.ts          # Core agent logic
-│   └── index.ts          # Exports
-├── providers/            # LLM provider abstraction
-│   ├── openai.ts         # OpenAI implementation
-│   ├── anthropic.ts      # Anthropic implementation
-│   ├── types.ts          # Provider interfaces
-│   └── index.ts          # Factory
-├── tools/                # Tool implementations
-│   ├── types.ts          # Tool definitions
-│   ├── registry.ts       # Tool registration
-│   ├── filesystem/       # File operations
-│   ├── browser/          # Playwright automation
-│   ├── spreadsheet/      # Excel/CSV operations
-│   ├── document/         # Word document creation
-│   ├── presentation/    # PowerPoint generation
-│   ├── web/              # Web search/fetch
-│   └── formatters/       # Format conversion
-├── skills/               # Skill system
-│   ├── loader.ts         # Skill loading
-│   └── builtin/          # Built-in skills
-├── memory/               # Persistence
-│   ├── db.ts             # SQLite operations
-│   └── index.ts          # Memory interface
-├── security/            # Security system
-│   ├── config.ts         # Danger level rules
-│   ├── queue.ts          # Confirmation queue
-│   └── index.ts          # Security exports
-└── config/              # Configuration
-    └── index.ts          # Environment config
+shared → core → extension-v2
+                      └─ frontend  (connected at runtime via chrome.runtime)
 ```
 
 ---
 
-## Data Flow
+## Core Package (`@pixelmate/core`)
 
-### 1. User Request Flow
+### Agent (`src/agent/agent.ts`)
 
-```
-User Input → Frontend → WebSocket → Backend Agent
-                │                          │
-                │                          ▼
-                │                    LLM Processing
-                │                          │
-                │                          ▼
-                │                    Tool Execution
-                │                          │
-                │                          ▼
-                │                    Tool Results
-                │                          │
-                ◄─────────────────────────┘
-```
-
-### 2. Tool Execution Flow
+The agent implements a **think → act → observe** loop:
 
 ```
-Agent decides to use tool
-         │
-         ▼
-┌─────────────────┐
-│ Check security │
-│    rules        │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Requires       │──Yes──► Confirmation
-│ confirmation?  │         Queue
-└────────┬────────┘
-         │ No
-         ▼
-┌─────────────────┐
-│ ToolRegistry   │
-│ .execute()     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Tool.execute() │
-│ (sandboxed)    │
-└────────┬────────┘
-         │
-         ▼
-    Result returned
+run(prompt)
+  └─ runAgentLoop()
+        ├─ provider.chatStream()          LLM generates response
+        ├─ extractToolCalls()             Parse [TOOL_CALL]…[/TOOL_CALL] tags
+        ├─ confirmationHandler?()         Ask user for dangerous tools
+        ├─ toolRegistry.execute()         Run the tool
+        └─ loop until no more tool calls or maxTurns reached
 ```
+
+**Events emitted**: `state_change`, `thought`, `tool_call`, `tool_result`, `message`, `error`
+
+**Tool call format** (in LLM output):
+```
+[TOOL_CALL]tool_name: {"param": "value"}[/TOOL_CALL]
+```
+
+**Options**:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `systemPrompt` | `undefined` | Overrides the default prompt (used by skills) |
+| `maxTurns` | `50` | Maximum agent loop iterations |
+| `model` | Provider default | Model string passed to the LLM |
+| `workingDirectory` | `undefined` | Base path for filesystem tools |
+| `confirmationHandler` | `undefined` | Called before dangerous tool execution |
 
 ---
 
-## Security Architecture
+### ToolRegistry (`src/tools/registry.ts`)
 
-### Sandboxing
-
-**File System Sandbox:**
-- All file operations restricted to working directory
-- Path traversal prevention
-- Configurable allowed operations
-
-**Browser Sandbox:**
-- Runs in headless mode by default
-- Isolated browser contexts
-- Timeout protections
-
-### Confirmation System
-
-```
-Dangerous Action
-        │
-        ▼
-┌─────────────────┐
-│ Check danger    │
-│ level           │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │ Medium+ │
-    └────┬────┘
-         │
-         ▼
-┌─────────────────┐
-│ Queue request   │
-│ WebSocket push  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Wait for user  │
-│ approval       │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │Approve/ │
-    │ Deny    │
-    └────┬────┘
-         │
-         ▼
-┌─────────────────┐
-│ Execute or     │
-│ cancel         │
-└─────────────────┘
-```
+- Stores tools by name
+- `register(tool)` — throws if duplicate name
+- `execute(name, params)` — validates params via Zod, returns `ToolResult`
+- `getDefinitions()` — serialisable list sent to the frontend via `GET_TOOLS`
 
 ---
 
-## Provider Abstraction
+### Providers (`src/providers/`)
 
-### Interface
+Each provider implements `LLMProvider`:
 
-```typescript
+```ts
 interface LLMProvider {
-  chat(messages: Message[], options?: ChatOptions): Promise<ChatResponse>;
-  getModel(): string;
-  setModel(model: string): void;
-}
-```
-
-### Supported Providers
-
-| Provider | Package | Models |
-|----------|---------|--------|
-| OpenAI | `openai` | GPT-4, GPT-3.5 |
-| Anthropic | `@anthropic-ai/sdk` | Claude 3 |
-| Groq | API (REST) | Mixtral, Llama |
-| Google | `@google/generative-ai` | Gemini |
-| Ollama | REST | Local models |
-
----
-
-## Tool System
-
-### Tool Interface
-
-```typescript
-interface Tool {
-  definition: ToolDefinition;
-  execute, unknown>): Promise(params: Record<string<ToolResult>;
-}
-
-interface ToolDefinition {
   name: string;
-  description: string;
-  parameters: ToolParameter[];
-}
-
-interface ToolParameter {
-  name: string;
-  description: string;
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
-  required: boolean;
-  default?: unknown;
+  chat(options: ChatOptions): Promise<ChatResponse>;
+  chatStream(options: ChatOptions): AsyncGenerator<StreamingChunk>;
+  listModels(): Promise<string[]>;
 }
 ```
 
-### Tool Categories
-
-1. **Filesystem** - File read/write operations
-2. **Spreadsheet** - Excel/CSV generation
-3. **Document** - Word document creation
-4. **Presentation** - PowerPoint generation
-5. **Browser** - Web automation
-6. **Web** - Search and fetch
-7. **Formatters** - Data conversion
+| Provider | Default model |
+|----------|---------------|
+| `AnthropicProvider` | `claude-sonnet-4` |
+| `OpenAIProvider` | `gpt-4o` |
+| `GroqProvider` | `llama-3.3-70b-versatile` |
 
 ---
 
-## State Management
+### Skills (`src/skills/index.ts`)
 
-### Agent State
+6 built-in skill presets (system prompts): `document`, `email`, `presentation`, `spreadsheet`, `research`, `code`.
 
-```
-idle → thinking → acting → done
-  │        │          │
-  │        └────▲─────┘
-  │               │
-  └──────► error ◄─┘
-```
-
-### Session State
-
-- Session ID
-- Message history
-- Working directory
-- Current task
+`getSkillPrompt(skill)` is case-insensitive and falls back to a generic assistant prompt.
 
 ---
 
-## Database Schema
+## Extension Service Worker (`@pixelmate/extension`)
 
-### Sessions Table
+### Startup
 
-```sql
-CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,
-  title TEXT,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+1. `chrome.runtime.onInstalled` fires
+2. `fileSystem.initializeOPFS()` sets up Origin Private File System
+3. `initializeToolRegistry()` registers all 33 tools
 
-### Messages Table
+### Message Handling
 
-```sql
-CREATE TABLE messages (
-  id TEXT PRIMARY KEY,
-  session_id TEXT,
-  role TEXT,
-  content TEXT,
-  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-```
+Two channels:
 
-### Preferences Table
+| Channel | API | Use |
+|---------|-----|-----|
+| One-shot | `chrome.runtime.sendMessage` → `handleMessage()` | Config, keys, files, sessions |
+| Streaming | `chrome.runtime.connect('agent')` → `handlePortMessage()` | Agent execution with real-time events |
 
-```sql
-CREATE TABLE preferences (
-  key TEXT PRIMARY KEY,
-  value TEXT
-);
-```
+Full message reference: [API Reference](./api.md)
+
+### Filesystem
+
+`HybridFileSystem` layers three storage backends:
+
+| Backend | Access | Persistence |
+|---------|--------|-------------|
+| OPFS (Origin Private FS) | Always available | Permanent |
+| Google Drive | After OAuth | Cloud |
+| Native File System API | After `requestNativeAccess()` | Local disk |
 
 ---
 
-## WebSocket Protocol
+## Frontend PWA (`@pixelmate/frontend`)
 
-### Connection Lifecycle
+### ExtensionBridge
 
-1. Client connects to `/ws`
-2. Server assigns client ID
-3. Client sends authentication (if configured)
-4. Bidirectional message exchange
-5. Connection closed or client disconnects
+`packages/frontend/src/services/ExtensionBridge.ts` — singleton (`bridge`) that:
 
-### Message Format
+- Resolves the extension ID from `chrome.runtime.id` → `window.__PIXELMATE_EXT_ID` → `VITE_EXTENSION_ID`
+- Wraps `chrome.runtime.sendMessage` for one-shot requests
+- Uses `chrome.runtime.connect('agent')` for streaming agent runs
+- Exposes typed methods: `getModels`, `setProvider`, `executeAgent`, `getFiles`, etc.
 
-```typescript
-interface WSMessage {
-  type: string;
-  [key: string]: unknown;
-}
+### Data Flow — One-shot
+
+```
+App.tsx  →  bridge.setApiKey()  →  sendMessage({ type: 'SET_API_KEY', … })
+                                         ↓
+                               background.ts handleMessage()
+                                         ↓
+                               chrome.storage.sync.set(…)
+                                         ↓
+                               sendResponse({ success: true })
+```
+
+### Data Flow — Streaming Agent Run
+
+```
+App.tsx  →  bridge.executeAgent()  →  chrome.runtime.connect('agent')
+                                             ↓ port.postMessage AGENT_EXECUTE
+                                       background.ts handlePortMessage()
+                                             ↓
+                                       executeAgentWithStream()
+                                             ↓ agent.onEvent(…)
+                                       port.postMessage AGENT_EVENT
+                                             ↓
+                               App.tsx handleAgentEvent() → setMessages(…)
+                                             ↓ when done
+                                       port.postMessage AGENT_COMPLETE
 ```
 
 ---
 
-## Extension Points
+## Security Model
 
-### Custom Tools
-
-1. Implement `Tool` interface
-2. Register with `ToolRegistry`
-3. Add security rules if needed
-
-### Custom Skills
-
-1. Create markdown file in `skills/builtin/`
-2. Define instructions and parameters
-3. Agent auto-detects skill usage
-
-### Custom Providers
-
-1. Implement `LLMProvider` interface
-2. Add to provider factory
-3. Configure in environment
+| Concern | Mechanism |
+|---------|----------|
+| API keys | Stored in `chrome.storage.sync`, never sent to any PixelMate server |
+| Dangerous tools | Listed in `DANGEROUS_TOOLS`; `confirmationHandler` called before execution |
+| Confirmation | Modal in App.tsx shows tool, description, risk level, and exact params |
+| Google OAuth | `chrome.identity.getAuthToken()` — no redirect, token in `chrome.storage.session` |
+| Origin isolation | Extension talks only to whitelisted origins in `externally_connectable` |
 
 ---
 
-## Performance Considerations
+## Testing Architecture
 
-### Concurrent Requests
+| Package | Framework | Environment |
+|---------|-----------|-------------|
+| `@pixelmate/core` | Vitest | Node |
+| `@pixelmate/extension` | Vitest | Node (chrome mocked) |
+| `@pixelmate/frontend` | Vitest + Testing Library | jsdom |
 
-- Node.js event loop handles concurrent I/O
-- WebSocket connections pooled
+Run all tests: `pnpm run test`
 
-### Memory Management
-
-- Sessions stored in SQLite
-- Message history limited per session
-- Tool results not cached long-term
-
-### Browser Resources
-
-- Single browser instance shared
-- Pages created/destroyed per task
-- Headless mode for efficiency
-
----
-
-## Deployment
-
-### Development
-
-```
-npm run dev          # Both servers
-npm run dev:backend  # Backend only
-npm run dev:frontend # Frontend only
-```
-
-### Production
-
-```
-npm run build        # Build both
-npm start            # Run production
-```
-
-### Docker
-
-```bash
-docker build -t pixelmate .
-docker run -p 3001:3001 pixelmate
-```
-
----
-
-## Next Steps
-
-- [Tools Reference](./tools.md) - Complete tool documentation
-- [Configuration](./configuration.md) - Settings guide
-- [Security](./security.md) - Security details
-- [Troubleshooting](./troubleshooting.md) - Common issues
