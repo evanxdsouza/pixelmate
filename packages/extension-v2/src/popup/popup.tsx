@@ -20,6 +20,15 @@ function PopupApp() {
   const [availableModels, setAvailableModels] = useState<string[]>(STATIC_MODELS['anthropic']);
   const [loadingModels, setLoadingModels] = useState(false);
 
+  // ChromeOS: Escape closes the settings panel
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showSettings) setShowSettings(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showSettings]);
+
   // Load saved provider + model on mount
   useEffect(() => {
     chrome.storage.sync.get(['selected_provider', 'selected_model'], (result) => {

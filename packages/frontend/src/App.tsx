@@ -42,6 +42,49 @@ function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<(() => void) | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ChromeOS keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      // Ctrl+Enter — submit current message
+      if (ctrl && e.key === 'Enter') {
+        e.preventDefault();
+        if (!isLoading && input.trim()) {
+          document.querySelector<HTMLFormElement>('.chat-form')?.requestSubmit();
+        }
+      }
+      // Ctrl+Shift+N — new chat
+      if (ctrl && e.shiftKey && e.key === 'N') {
+        e.preventDefault();
+        handleNewChat();
+      }
+      // Ctrl+K — focus the chat input
+      if (ctrl && e.key === 'k') {
+        e.preventDefault();
+        setCurrentView('chat');
+        inputRef.current?.focus();
+      }
+      // Ctrl+, — open settings
+      if (ctrl && e.key === ',') {
+        e.preventDefault();
+        setCurrentView('settings');
+      }
+      // Escape — cancel running agent or dismiss confirmation
+      if (e.key === 'Escape') {
+        if (confirmations.length > 0) return; // let confirmation handle it
+        if (isLoading) {
+          cancelRef.current?.();
+          setIsLoading(false);
+          setIsTyping(false);
+          setStatus('');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isLoading, input, confirmations]);
 
   useEffect(() => {
     const available = bridge.isAvailable();
@@ -410,9 +453,10 @@ function App() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={handleSubmit} className="input-container">
+              <form className="chat-form input-container" onSubmit={handleSubmit}>
                 <div className="input-wrapper">
                   <textarea
+                    ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="What would you like me to do?"
@@ -428,7 +472,7 @@ function App() {
                     </svg>
                   </button>
                 </div>
-                <p className="input-hint">Press Enter to send, Shift+Enter for new line</p>
+                <p className="input-hint">Enter to send · Shift+Enter for new line · Ctrl+K to focus · Ctrl+Shift+N new chat</p>
               </form>
             </>
           )}

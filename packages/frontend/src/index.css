@@ -951,6 +951,97 @@ body {
   }
 }
 
+/* ============================================================
+   ChromeOS optimisations
+   ============================================================ */
+
+/* Window Controls Overlay — shift content below the draggable title-bar area */
+@media (display-mode: window-controls-overlay) {
+  .main-header {
+    padding-top: env(titlebar-area-height, 0);
+    /* Make the header itself draggable so the user can move the window */
+    -webkit-app-region: drag;
+  }
+  /* Keep interactive elements inside the header clickable */
+  .main-header button,
+  .main-header select,
+  .main-header input {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* Large-screen layout: widen sidebar on screens ≥ 1280 px (typical Chromebook) */
+@media (min-width: 1280px) {
+  .sidebar {
+    width: 320px;
+  }
+  .message {
+    max-width: 70%;
+  }
+  .quick-actions {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+}
+
+/* Keyboard-focus ring — visible for Tab / arrow-key navigation */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Cursor affordances for desktop/mouse users */
+button,
+[role="button"],
+.nav-btn,
+.session-item,
+.new-chat-btn,
+.send-btn,
+.settings-btn {
+  cursor: pointer;
+}
+
+textarea,
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+  cursor: text;
+}
+
+/* Resize cursor on the sidebar drag handle area */
+.sidebar {
+  resize: none; /* managed by JS */
+}
+
+/* Hover state improvements for mouse users */
+.nav-btn:hover {
+  background: var(--surface-hover);
+}
+
+.session-item:hover {
+  background: var(--surface-hover);
+}
+
+.new-chat-btn:hover {
+  background: var(--primary-hover);
+}
+
+/* Prevent text selection on purely decorative / action elements */
+.logo,
+.nav-btn,
+.sidebar-toggle,
+.menu-btn,
+.new-chat-btn,
+.send-btn {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================
+   End ChromeOS optimisations
+   ============================================================ */
+
 /* Extension not-installed banner */
 .extension-banner {
   display: flex;

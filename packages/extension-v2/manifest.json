@@ -11,13 +11,17 @@
     "notifications",
     "unlimitedStorage",
     "identity",
-    "downloads"
+    "downloads",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "background": {
     "service_worker": "background.js",
